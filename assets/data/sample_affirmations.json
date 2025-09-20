@@ -1,0 +1,140 @@
+{
+  "affirmations": [
+    {
+      "id": "teen_career_2",
+      "content": "You're building something incredible with each step forward.",
+      "age_group": "Teenager (13-17)",
+      "gender": null,
+      "category": "Career",
+      "is_custom": false
+    },
+    {
+      "id": "teen_self_esteem_2",
+      "content": "Your unique perspective makes the world more interesting.",
+      "age_group": "Teenager (13-17)",
+      "gender": null,
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "young_career_2",
+      "content": "Your career journey is uniquely yours—trust the process.",
+      "age_group": "Young Adult (18-25)",
+      "gender": null,
+      "category": "Career",
+      "is_custom": false
+    },
+    {
+      "id": "young_finances_2",
+      "content": "Financial wisdom grows with each decision you make.",
+      "age_group": "Young Adult (18-25)",
+      "gender": null,
+      "category": "Finances",
+      "is_custom": false
+    },
+    {
+      "id": "adult_family_2",
+      "content": "You're creating a legacy of strength and compassion.",
+      "age_group": "Adult (26-55)",
+      "gender": null,
+      "category": "Family",
+      "is_custom": false
+    },
+    {
+      "id": "adult_health_2",
+      "content": "Each healthy choice you make is an investment in your future.",
+      "age_group": "Adult (26-55)",
+      "gender": null,
+      "category": "Health",
+      "is_custom": false
+    },
+    {
+      "id": "senior_self_esteem_2",
+      "content": "You've overcome so much—you can handle whatever comes next.",
+      "age_group": "Senior (56+)",
+      "gender": null,
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "senior_creative_2",
+      "content": "Your creativity has been refined by years of wisdom.",
+      "age_group": "Senior (56+)",
+      "gender": null,
+      "category": "Creative Pursuits",
+      "is_custom": false
+    },
+    {
+      "id": "male_expression_1",
+      "content": "You're allowed to feel deeply and express yourself fully.",
+      "age_group": null,
+      "gender": "Male",
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "female_space_1",
+      "content": "You deserve to take up space and be heard.",
+      "age_group": null,
+      "gender": "Female",
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "nonbinary_journey_1",
+      "content": "Your journey of self-discovery is beautiful and important.",
+      "age_group": null,
+      "gender": "Non-binary",
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "universal_opportunity_1",
+      "content": "Today is full of possibilities waiting for you to discover them.",
+      "age_group": null,
+      "gender": null,
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "universal_progress_1",
+      "content": "Progress, not perfection, is what matters most.",
+      "age_group": null,
+      "gender": null,
+      "category": "Self-Esteem",
+      "is_custom": false
+    },
+    {
+      "id": "relationship_love_1",
+      "content": "You attract love by being authentically yourself.",
+      "age_group": null,
+      "gender": null,
+      "category": "Relationship",
+      "is_custom": false
+    },
+    {
+      "id": "health_energy_1",
+      "content": "Your body is your temple, treat it with love and respect.",
+      "age_group": null,
+      "gender": null,
+      "category": "Health",
+      "is_custom": false
+    },
+    {
+      "id": "creative_expression_1",
+      "content": "Your creativity flows freely when you trust yourself.",
+      "age_group": null,
+      "gender": null,
+      "category": "Creative Pursuits",
+      "is_custom": false
+    },
+    {
+      "id": "finances_abundance_1",
+      "content": "You are worthy of financial abundance and security.",
+      "age_group": null,
+      "gender": null,
+      "category": "Finances",
+      "is_custom": false
+    }
+  ]
+}
