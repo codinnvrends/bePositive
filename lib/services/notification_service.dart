@@ -1,5 +1,7 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
+import 'package:timezone/data/latest.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 import '../models/notification_settings.dart';
 
 class NotificationService {
@@ -36,7 +38,39 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    // Initialize timezone database for zoned scheduling
+    try {
+      tz.initializeTimeZones();
+      // Optionally, set local location if needed. Without explicit set, tz.local
+      // falls back to the device environment where supported.
+      // If needed later, integrate flutter_native_timezone to set location.
+    } catch (_) {
+      // Safe to ignore; plugin will still work with best effort
+    }
     _initialized = true;
+  }
+
+  Future<bool> areNotificationsEnabled() async {
+    return await isPermissionGranted();
+  }
+
+  Future<int> getPendingCount() async {
+    final list = await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+    return list.length;
+  }
+
+  Future<List<PendingNotificationRequest>> getPendingRequests() async {
+    return await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+  }
+
+  Future<void> scheduleOneOffIn(Duration delay, {String? title, String? body}) async {
+    final when = DateTime.now().add(delay);
+    await _scheduleNotification(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000000),
+      title: title ?? 'Debug One-off Notification',
+      body: body ?? 'This was scheduled ${delay.inSeconds}s ago',
+      scheduledDate: when,
+    );
   }
 
   void _onNotificationTapped(NotificationResponse response) {
@@ -55,7 +89,14 @@ class NotificationService {
 
     if (androidImplementation != null) {
       final bool? result = await androidImplementation.requestNotificationsPermission();
-      granted = result ?? false;
+      // If result is null (older Android) or false, fall back to checking current status
+      if (result == null) {
+        granted = await isPermissionGranted();
+      } else {
+        granted = result;
+      }
+
+      // Exact alarm permission is handled via Settings intent from UI (Android 12+)
     }
 
     // For iOS, we'll use a simpler approach that doesn't require type resolution
@@ -75,6 +116,21 @@ class NotificationService {
     }
 
     return granted;
+  }
+
+  // Check current notifications enabled status (Android 13+ reports accurately)
+  Future<bool> isPermissionGranted() async {
+    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+        _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    if (androidImplementation == null) return true; // Pre-Android 13
+    final bool? enabled = await androidImplementation.areNotificationsEnabled();
+    return enabled ?? true;
+  }
+
+  Future<bool> areExactAlarmsAllowed() async {
+    // Removed as it's not supported by the current plugin version
+    return true;
   }
 
   Future<void> scheduleAffirmationNotifications(NotificationSettings settings) async {
@@ -101,15 +157,22 @@ class NotificationService {
       final weekday = scheduledDate.weekday;
       if (!settings.selectedDays.contains(weekday)) continue;
 
-      // Skip if the time has already passed today
-      if (day == 0 && scheduledDate.isBefore(now)) continue;
+      // Schedule up to dailyCount notifications per day, spaced by 2 hours
+      final int count = settings.dailyCount.clamp(1, 10);
+      for (int i = 0; i < count; i++) {
+        final dt = scheduledDate.add(Duration(hours: i * 2));
+        // Skip past times if scheduling for today
+        if (day == 0 && dt.isBefore(now)) continue;
+        // Ensure still on the same day; if not, skip overflowed times
+        if (dt.day != scheduledDate.day) continue;
 
-      await _scheduleNotification(
-        id: day,
-        title: 'Daily Affirmation 🌟',
-        body: 'Your personalized affirmation is ready to inspire you!',
-        scheduledDate: scheduledDate,
-      );
+        await _scheduleNotification(
+          id: day * 100 + i, // Unique ID per day/index window
+          title: 'Daily Affirmation 🌟',
+          body: 'Your personalized affirmation is ready to inspire you!',
+          scheduledDate: dt,
+        );
+      }
     }
   }
 
@@ -141,11 +204,13 @@ class NotificationService {
       iOS: iosPlatformChannelSpecifics,
     );
 
+    final tz.TZDateTime tzDateTime = tz.TZDateTime.from(scheduledDate, tz.local);
+
     await _flutterLocalNotificationsPlugin.zonedSchedule(
       id,
       title,
       body,
-      _convertToTZDateTime(scheduledDate),
+      tzDateTime,
       platformChannelSpecifics,
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
@@ -154,13 +219,7 @@ class NotificationService {
     );
   }
 
-  // Helper method to convert DateTime to TZDateTime
-  // Note: In a real app, you'd use the timezone package for proper timezone handling
-  dynamic _convertToTZDateTime(DateTime dateTime) {
-    // For now, we'll use the local timezone
-    // In production, you should use: tz.TZDateTime.from(dateTime, tz.local)
-    return dateTime;
-  }
+  // Removed legacy conversion helper; now using tz.TZDateTime.from directly
 
   Future<void> showInstantNotification({
     required String title,

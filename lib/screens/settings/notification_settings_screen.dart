@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
-import '../../providers/user_provider.dart';
-import '../../providers/notification_provider.dart';
-import '../../utils/app_theme.dart';
+import 'package:be_positive/providers/user_provider.dart';
+import 'package:be_positive/providers/notification_provider.dart';
+import 'package:be_positive/utils/app_theme.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
@@ -16,6 +18,11 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   late TimeOfDay _selectedTime;
   late int _dailyCount;
   late List<int> _selectedDays;
+  // Debug panel state
+  int _pendingCount = 0;
+  List<String> _pendingSummaries = const [];
+  bool? _notificationsEnabled;
+  bool? _exactAlarmsAllowed;
 
   @override
   void initState() {
@@ -26,17 +33,53 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     _selectedTime = TimeOfDay(hour: settings.hour, minute: settings.minute);
     _dailyCount = settings.dailyCount;
     _selectedDays = List.from(settings.selectedDays);
+
+    // Initialize provider (permissions + load settings) after first frame
+    // so that context.read works safely and UI can update via notifyListeners
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final userProvider = context.read<UserProvider>();
+      await context.read<NotificationProvider>().initialize(
+            userProvider.userProfile?.id,
+          );
+      if (mounted) {
+        final s = context.read<NotificationProvider>().settings;
+        setState(() {
+          _selectedTime = TimeOfDay(hour: s.hour, minute: s.minute);
+          _dailyCount = s.dailyCount;
+          _selectedDays = List.from(s.selectedDays);
+        });
+        await _refreshDebug();
+      }
+    });
+  }
+
+  Future<void> _refreshDebug() async {
+    final np = context.read<NotificationProvider>();
+    final enabled = await np.areNotificationsEnabled();
+    final alarms = await np.areExactAlarmsAllowed();
+    final count = await np.getPendingScheduledCount();
+    final summaries = await np.getPendingSummaries();
+    if (!mounted) return;
+    setState(() {
+      _notificationsEnabled = enabled;
+      _exactAlarmsAllowed = alarms;
+      _pendingCount = count;
+      _pendingSummaries = summaries;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notification Settings'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
-          onPressed: () => context.pop(),
-        ),
+        title: const Text('Notifications'),
+        // Show back button only when this screen was pushed (e.g., from Settings)
+        leading: Navigator.of(context).canPop()
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios),
+                onPressed: () => context.pop(),
+              )
+            : null,
         actions: [
           TextButton(
             onPressed: _saveSettings,
@@ -68,11 +111,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                         Switch(
                           value: notificationProvider.settings.enabled,
                           onChanged: (value) {
-                            if (userProvider.hasProfile) {
-                              notificationProvider.toggleNotifications(
-                                userProvider.userProfile!.id,
-                              );
-                            }
+                            notificationProvider.toggleNotifications(
+                              userProvider.userProfile?.id,
+                            );
                           },
                         ),
                       ],
@@ -81,7 +122,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: AppTheme.spacingS),
                     
                     Text(
-                      'Receive daily affirmation reminders',
+                      'Receive daily affirmation notifications',
                       style: AppTheme.bodyMedium.copyWith(
                         color: AppTheme.textLight,
                       ),
@@ -304,6 +345,162 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   ],
                 ),
               ),
+              
+              const SizedBox(height: AppTheme.spacingL),
+
+              // Scheduling Utilities
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacingL),
+                decoration: AppTheme.cardDecoration,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Scheduling Utilities',
+                      style: AppTheme.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: AppTheme.spacingS),
+
+                    if (!notificationProvider.permissionGranted) ...[
+                      Text(
+                        'Notifications permission not granted',
+                        style: AppTheme.bodySmall.copyWith(color: AppTheme.warningOrange),
+                      ),
+                    ],
+
+                    const SizedBox(height: AppTheme.spacingM),
+
+                    Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            await notificationProvider.openExactAlarmsSettings();
+                          },
+                          child: const Text('Open Alarm Permission'),
+                        ),
+                      ),
+                      const SizedBox(width: AppTheme.spacingM),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            await notificationProvider.reschedule();
+                            final count = await notificationProvider.getPendingScheduledCount();
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Scheduled $count notifications')),
+                            );
+                          },
+                          child: const Text('Reschedule & Count'),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: AppTheme.spacingM),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: () async {
+                        final info = await PackageInfo.fromPlatform();
+                        // Launch system notifications settings for this app
+                        const action = 'android.settings.APP_NOTIFICATION_SETTINGS';
+                        final intent = AndroidIntent(
+                          action: action,
+                          arguments: <String, dynamic>{
+                            // For Android 8+ (API 26+)
+                            'android.provider.extra.APP_PACKAGE': info.packageName,
+                            // Some OEMs/versions use these extras
+                            'app_package': info.packageName,
+                            'app_uid': 0,
+                          },
+                        );
+                        await intent.launch();
+                      },
+                      child: const Text('Open App Notification Settings'),
+                    ),
+                  ),
+                ],
+              ),
+          ),
+
+          const SizedBox(height: AppTheme.spacingL),
+
+          // Debug Panel
+          Container(
+            padding: const EdgeInsets.all(AppTheme.spacingL),
+            decoration: AppTheme.cardDecoration,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Debug Panel',
+                  style: AppTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: AppTheme.spacingS),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Notifications enabled: ${_notificationsEnabled == null ? '—' : (_notificationsEnabled! ? 'Yes' : 'No')}'),
+                          Text('Exact alarms allowed: ${_exactAlarmsAllowed == null ? '—' : (_exactAlarmsAllowed! ? 'Yes' : 'No')}'),
+                          Text('Pending scheduled: $_pendingCount'),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: AppTheme.spacingM),
+                    Column(
+                      children: [
+                        OutlinedButton(
+                          onPressed: _refreshDebug,
+                          child: const Text('Refresh Status'),
+                        ),
+                        const SizedBox(height: AppTheme.spacingS),
+                        OutlinedButton(
+                          onPressed: () async {
+                            await context.read<NotificationProvider>().scheduleOneOffIn(const Duration(seconds: 15));
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('One-off scheduled in 15s')),
+                            );
+                            await _refreshDebug();
+                          },
+                          child: const Text('Schedule One-off (15s)'),
+                        ),
+                        const SizedBox(height: AppTheme.spacingS),
+                        OutlinedButton(
+                          onPressed: () async {
+                            await context.read<NotificationProvider>().cancelAllNotifications();
+                            await _refreshDebug();
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Cancelled all scheduled notifications')),
+                            );
+                          },
+                          child: const Text('Cancel All'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppTheme.spacingM),
+                if (_pendingSummaries.isNotEmpty) ...[
+                  Text('Pending list:', style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: AppTheme.spacingS),
+                  ..._pendingSummaries.take(10).map((e) => Text(e)).toList(),
+                  if (_pendingSummaries.length > 10) Text('...and ${_pendingSummaries.length - 10} more'),
+                ] else ...[
+                  Text('No pending notifications.'),
+                ],
+              ],
+            ),
+          ),
             ],
           );
         },
@@ -340,8 +537,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final notificationProvider = context.read<NotificationProvider>();
     final userProvider = context.read<UserProvider>();
     
-    if (!userProvider.hasProfile) return;
-    
     final newSettings = notificationProvider.settings.copyWith(
       hour: _selectedTime.hour,
       minute: _selectedTime.minute,
@@ -350,16 +545,21 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     );
     
     final success = await notificationProvider.updateSettings(
-      userProvider.userProfile!.id,
+      userProvider.userProfile?.id,
       newSettings,
     );
     
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Notification settings saved'),
-        ),
-      );
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(success
+            ? 'Notification settings saved'
+            : 'Failed to save notification settings'),
+      ),
+    );
+    
+    if (success && Navigator.of(context).canPop()) {
       context.pop();
     }
   }

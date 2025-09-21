@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/affirmation_provider.dart';
-import '../../providers/notification_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/focus_areas_chips.dart';
 
@@ -52,8 +51,8 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: Consumer3<UserProvider, AffirmationProvider, NotificationProvider>(
-          builder: (context, userProvider, affirmationProvider, notificationProvider, child) {
+        child: Consumer2<UserProvider, AffirmationProvider>(
+          builder: (context, userProvider, affirmationProvider, child) {
             return FadeTransition(
               opacity: _fadeAnimation,
               child: CustomScrollView(
@@ -94,12 +93,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                         
                         const SizedBox(height: AppTheme.spacingXL),
                         
-                        // Daily Affirmation Settings Section
-                        _buildSectionHeader('Daily Affirmation Settings'),
-                        const SizedBox(height: AppTheme.spacingM),
-                        
-                        _buildNotificationCard(notificationProvider, userProvider),
-                        
+                        // Notifications moved to dedicated Notifications screen
+                        // (see /notification-settings). Removed from Settings page.
                         const SizedBox(height: AppTheme.spacingXL),
                         
                         // Add New Affirmations Section
@@ -188,74 +183,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _buildNotificationCard(NotificationProvider notificationProvider, UserProvider userProvider) {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacingL),
-      decoration: AppTheme.cardDecoration,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Time',
-                style: AppTheme.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Switch(
-                value: notificationProvider.settings.enabled,
-                onChanged: (value) {
-                  if (userProvider.hasProfile) {
-                    notificationProvider.toggleNotifications(userProvider.userProfile!.id);
-                  }
-                },
-              ),
-            ],
-          ),
-          
-          Text(
-            '${notificationProvider.settings.dailyCount} per day',
-            style: AppTheme.bodyMedium.copyWith(
-              color: AppTheme.textLight,
-            ),
-          ),
-          
-          const SizedBox(height: AppTheme.spacingL),
-          
-          Row(
-            children: [
-              Text(
-                'Notification Settings',
-                style: AppTheme.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                notificationProvider.timeDisplay,
-                style: AppTheme.bodyMedium.copyWith(
-                  color: AppTheme.primaryTeal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-          
-          const SizedBox(height: AppTheme.spacingM),
-          
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
-              onPressed: () => context.push('/notification-settings'),
-              child: const Text('Configure Notifications'),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // Notification card removed from Settings; configuration now lives under
+  // the dedicated Notifications tab/screen.
 
   Widget _buildAddAffirmationCard() {
     return Container(

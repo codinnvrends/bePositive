@@ -75,6 +75,12 @@ class AppRouter {
             name: 'favorites',
             builder: (context, state) => const FavoritesScreen(),
           ),
+          // Notifications is a first-class tab, keep it inside the shell
+          GoRoute(
+            path: '/notification-settings',
+            name: 'notification-settings',
+            builder: (context, state) => const NotificationSettingsScreen(),
+          ),
           GoRoute(
             path: '/settings',
             name: 'settings',
@@ -89,11 +95,7 @@ class AppRouter {
         name: 'profile-settings',
         builder: (context, state) => const ProfileSettingsScreen(),
       ),
-      GoRoute(
-        path: '/notification-settings',
-        name: 'notification-settings',
-        builder: (context, state) => const NotificationSettingsScreen(),
-      ),
+      // Notification settings route moved inside ShellRoute above
     ],
     errorBuilder: (context, state) => Scaffold(
       body: Center(
@@ -153,8 +155,8 @@ class _MainAppShellState extends State<MainAppShell> {
     NavigationItem(
       icon: Icons.notifications_outlined,
       selectedIcon: Icons.notifications,
-      label: 'Reminders',
-      route: '/settings', // For now, reminders go to settings
+      label: 'Notifications',
+      route: '/notification-settings',
     ),
     NavigationItem(
       icon: Icons.settings_outlined,

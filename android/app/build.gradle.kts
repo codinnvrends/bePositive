@@ -8,7 +8,8 @@ plugins {
 android {
     namespace = "com.example.be_positive"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Align with plugins requiring NDK 27 (flutter_local_notifications, path_provider_android, etc.)
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         // Use Java 17 for modern Android builds

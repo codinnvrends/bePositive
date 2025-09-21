@@ -8,6 +8,8 @@ import 'providers/affirmation_provider.dart';
 import 'providers/notification_provider.dart';
 import 'services/notification_service.dart';
 import 'services/storage_service.dart';
+import 'database/database_helper.dart';
+import 'models/notification_settings.dart';
 import 'utils/app_theme.dart';
 import 'utils/app_router.dart';
 
@@ -37,6 +39,21 @@ Future<void> _initializeServices() async {
     
     // Initialize notification service
     await NotificationService().initialize();
+
+    // If device rebooted, reschedule notifications from persisted settings
+    final bootPending = await StorageService().getBool('boot_reschedule_pending') ?? false;
+    if (bootPending) {
+      try {
+        final userId = await StorageService().getUserId() ?? 'default';
+        final db = DatabaseHelper();
+        final NotificationSettings settings = await db.getNotificationSettings(userId);
+        await NotificationService().scheduleAffirmationNotifications(settings);
+        await StorageService().setBool('boot_reschedule_pending', false);
+        if (kDebugMode) debugPrint('Rescheduled notifications after boot for user: $userId');
+      } catch (e) {
+        if (kDebugMode) debugPrint('Failed to reschedule after boot: $e');
+      }
+    }
   } catch (e) {
     debugPrint('Error initializing services: $e');
   }

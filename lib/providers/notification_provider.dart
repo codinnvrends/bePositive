@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../models/notification_settings.dart';
 import '../services/notification_service.dart';
 import '../database/database_helper.dart';
@@ -17,15 +19,16 @@ class NotificationProvider with ChangeNotifier {
   final NotificationService _notificationService = NotificationService();
   final DatabaseHelper _databaseHelper = DatabaseHelper();
 
+  String _normalizeUserId(String? userId) => userId ?? 'default';
+
   Future<void> initialize(String? userId) async {
     _setLoading(true);
     try {
       await _notificationService.initialize();
       _permissionGranted = await _notificationService.requestPermissions();
       
-      if (userId != null) {
-        await loadSettings(userId);
-      }
+      // Load settings for the given user or a default profile if none exists
+      await loadSettings(_normalizeUserId(userId));
       
       _error = null;
     } catch (e) {
@@ -35,6 +38,51 @@ class NotificationProvider with ChangeNotifier {
       _setLoading(false);
     }
   }
+
+  // Debug helpers
+  Future<bool> areNotificationsEnabled() async {
+    try {
+      return await _notificationService.areNotificationsEnabled();
+    } catch (_) {
+      return _permissionGranted;
+    }
+  }
+
+  Future<bool> areExactAlarmsAllowed() async {
+    try {
+      return await _notificationService.areExactAlarmsAllowed();
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<List<String>> getPendingSummaries() async {
+    try {
+      final pending = await _notificationService.getPendingRequests();
+      return pending
+          .map((p) => '#${p.id} ${p.title ?? ''} — ${p.body ?? ''}')
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> scheduleOneOffIn(Duration delay) async {
+    try {
+      await _notificationService.scheduleOneOffIn(delay);
+    } catch (e) {
+      _error = 'Failed to schedule one-off: $e';
+      if (kDebugMode) print(_error);
+    }
+  }
+
+  Future<void> refreshPermissionStatus() async {
+    try {
+      _permissionGranted = await _notificationService.isPermissionGranted();
+      notifyListeners();
+    } catch (_) {}
+  }
+  
 
   Future<void> loadSettings(String userId) async {
     try {
@@ -46,10 +94,11 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  Future<bool> updateSettings(String userId, NotificationSettings newSettings) async {
+  Future<bool> updateSettings(String? userId, NotificationSettings newSettings) async {
     _setLoading(true);
     try {
-      await _databaseHelper.saveNotificationSettings(userId, newSettings);
+      final uid = _normalizeUserId(userId);
+      await _databaseHelper.saveNotificationSettings(uid, newSettings);
       _settings = newSettings;
       
       // Schedule notifications with new settings
@@ -66,24 +115,24 @@ class NotificationProvider with ChangeNotifier {
     }
   }
 
-  Future<void> toggleNotifications(String userId) async {
+  Future<void> toggleNotifications(String? userId) async {
     final newSettings = _settings.copyWith(enabled: !_settings.enabled);
-    await updateSettings(userId, newSettings);
+    await updateSettings(_normalizeUserId(userId), newSettings);
   }
 
-  Future<void> updateTime(String userId, int hour, int minute) async {
+  Future<void> updateTime(String? userId, int hour, int minute) async {
     final newSettings = _settings.copyWith(hour: hour, minute: minute);
-    await updateSettings(userId, newSettings);
+    await updateSettings(_normalizeUserId(userId), newSettings);
   }
 
-  Future<void> updateDailyCount(String userId, int count) async {
+  Future<void> updateDailyCount(String? userId, int count) async {
     final newSettings = _settings.copyWith(dailyCount: count);
-    await updateSettings(userId, newSettings);
+    await updateSettings(_normalizeUserId(userId), newSettings);
   }
 
-  Future<void> updateSelectedDays(String userId, List<int> days) async {
+  Future<void> updateSelectedDays(String? userId, List<int> days) async {
     final newSettings = _settings.copyWith(selectedDays: days);
-    await updateSettings(userId, newSettings);
+    await updateSettings(_normalizeUserId(userId), newSettings);
   }
 
   Future<void> requestPermissions() async {
@@ -113,6 +162,51 @@ class NotificationProvider with ChangeNotifier {
       await _notificationService.cancelAllNotifications();
     } catch (e) {
       _error = 'Failed to cancel notifications: $e';
+      if (kDebugMode) print(_error);
+    }
+  }
+
+  Future<void> openExactAlarmsSettings() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      // Primary: exact alarms permission screen (Android 12+)
+      try {
+        final intent = AndroidIntent(
+          action: 'android.settings.REQUEST_SCHEDULE_EXACT_ALARM',
+          data: 'package:${info.packageName}',
+        );
+        await intent.launch();
+        return;
+      } catch (_) {/* fall back below */}
+
+      // Fallback: app details settings
+      final fallback = AndroidIntent(
+        action: 'android.settings.APPLICATION_DETAILS_SETTINGS',
+        data: 'package:${info.packageName}',
+      );
+      await fallback.launch();
+    } catch (e) {
+      _error = 'Failed to open exact alarms settings: $e';
+      if (kDebugMode) print(_error);
+    }
+  }
+
+  Future<int> getPendingScheduledCount() async {
+    try {
+      return await _notificationService.getPendingCount();
+    } catch (e) {
+      _error = 'Failed to get pending notifications: $e';
+      if (kDebugMode) print(_error);
+      return 0;
+    }
+  }
+
+  Future<void> reschedule() async {
+    try {
+      await _notificationService.cancelAllNotifications();
+      await _notificationService.scheduleAffirmationNotifications(_settings);
+    } catch (e) {
+      _error = 'Failed to reschedule notifications: $e';
       if (kDebugMode) print(_error);
     }
   }
