@@ -221,4 +221,42 @@ class AffirmationProvider with ChangeNotifier {
   List<String> get availableCategories {
     return _affirmations.map((a) => a.category).toSet().toList()..sort();
   }
+
+  Future<void> setCurrentAffirmationById(String id, {UserProfile? user}) async {
+    try {
+      // Ensure affirmations are loaded
+      if (_affirmations.isEmpty) {
+        await loadAffirmations(user);
+      }
+
+      // Try to find in current list first
+      final found = _affirmations.cast<Affirmation?>().firstWhere(
+        (a) => a?.id == id,
+        orElse: () => null,
+      );
+
+      if (found != null) {
+        _currentAffirmation = found;
+        notifyListeners();
+        return;
+      }
+
+      // Fallback: load all affirmations from DB and search
+      final all = await _databaseHelper.getAllAffirmations();
+      Affirmation? byId;
+      for (final a in all) {
+        if (a.id == id) {
+          byId = a;
+          break;
+        }
+      }
+      byId ??= all.isNotEmpty ? all.first : null;
+      if (byId != null) {
+        _currentAffirmation = byId;
+        notifyListeners();
+      }
+    } catch (e) {
+      if (kDebugMode) print('Failed to set affirmation by id: $e');
+    }
+  }
 }

@@ -14,15 +14,136 @@ class NotificationSettingsScreen extends StatefulWidget {
   State<NotificationSettingsScreen> createState() => _NotificationSettingsScreenState();
 }
 
+// Simple editable row with a label on the left and a trailing widget on the right
+class _EditRow extends StatelessWidget {
+  final String label;
+  final Widget trailing;
+  final VoidCallback? onTap;
+  final double? labelWidth;
+
+  const _EditRow({
+    required this.label,
+    required this.trailing,
+    this.onTap,
+    this.labelWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final target = screenW * 0.42; // prefer ~42% for label area
+    final computedLabelW = (labelWidth ?? target).clamp(120, 160).toDouble();
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: AppTheme.spacingM),
+        child: Row(
+          children: [
+            SizedBox(
+              width: computedLabelW,
+              child: Text(
+                label,
+                style: AppTheme.bodyMedium,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Stepper row with - and + controls, and a central dynamic value text
+class _StepperRow extends StatelessWidget {
+  final String label;
+  final String Function() valueBuilder;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+  final double? labelWidth;
+
+  const _StepperRow({
+    required this.label,
+    required this.valueBuilder,
+    required this.onDecrement,
+    required this.onIncrement,
+    this.labelWidth = 160,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final screenW = MediaQuery.of(context).size.width;
+    final computedLabelW = (labelWidth ?? screenW * 0.5).clamp(120, 180).toDouble();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppTheme.spacingM),
+      child: Row(
+        children: [
+          SizedBox(
+            width: computedLabelW,
+            child: Text(
+              label,
+              style: AppTheme.bodyMedium,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          _RoundIconButton(icon: Icons.remove, onPressed: onDecrement, size: 32, iconSize: 18),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  valueBuilder(),
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  softWrap: false,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          _RoundIconButton(icon: Icons.add, onPressed: onIncrement, size: 32, iconSize: 18),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoundIconButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onPressed;
+  final double size;
+  final double iconSize;
+  const _RoundIconButton({
+    required this.icon,
+    required this.onPressed,
+    this.size = 40,
+    this.iconSize = 20,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          shape: const CircleBorder(),
+          padding: EdgeInsets.zero,
+          minimumSize: Size(size, size),
+        ),
+        onPressed: onPressed,
+        child: Icon(icon, size: iconSize),
+      ),
+    );
+  }
+}
+
 class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
   late TimeOfDay _selectedTime;
+  late TimeOfDay _endTime;
   late int _dailyCount;
   late List<int> _selectedDays;
-  // Debug panel state
-  int _pendingCount = 0;
-  List<String> _pendingSummaries = const [];
-  bool? _notificationsEnabled;
-  bool? _exactAlarmsAllowed;
 
   @override
   void initState() {
@@ -31,6 +152,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     final settings = notificationProvider.settings;
     
     _selectedTime = TimeOfDay(hour: settings.hour, minute: settings.minute);
+    _endTime = TimeOfDay(hour: settings.endHour, minute: settings.endMinute);
     _dailyCount = settings.dailyCount;
     _selectedDays = List.from(settings.selectedDays);
 
@@ -45,34 +167,45 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         final s = context.read<NotificationProvider>().settings;
         setState(() {
           _selectedTime = TimeOfDay(hour: s.hour, minute: s.minute);
+          _endTime = TimeOfDay(hour: s.endHour, minute: s.endMinute);
           _dailyCount = s.dailyCount;
           _selectedDays = List.from(s.selectedDays);
         });
-        await _refreshDebug();
       }
     });
   }
 
-  Future<void> _refreshDebug() async {
-    final np = context.read<NotificationProvider>();
-    final enabled = await np.areNotificationsEnabled();
-    final alarms = await np.areExactAlarmsAllowed();
-    final count = await np.getPendingScheduledCount();
-    final summaries = await np.getPendingSummaries();
-    if (!mounted) return;
-    setState(() {
-      _notificationsEnabled = enabled;
-      _exactAlarmsAllowed = alarms;
-      _pendingCount = count;
-      _pendingSummaries = summaries;
-    });
+  // Helpers for start/end/count relationship (inside State)
+  int _minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  void _ensureEndAfterStart() {
+    final start = _minutesOf(_selectedTime);
+    final end = _minutesOf(_endTime);
+    if (end <= start) {
+      final newEnd = (start + 15) % (24 * 60);
+      _endTime = TimeOfDay(hour: newEnd ~/ 60, minute: newEnd % 60);
+    }
+  }
+
+  int _maxAllowedCount() {
+    final start = _minutesOf(_selectedTime);
+    final end = _minutesOf(_endTime);
+    final total = (end - start).clamp(0, 24 * 60);
+    final maxByFive = (total ~/ 5);
+    return maxByFive.clamp(1, 96);
+  }
+
+  void _enforceCountCap() {
+    final max = _maxAllowedCount();
+    if (_dailyCount > max) _dailyCount = max;
+    if (_dailyCount < 1) _dailyCount = 1;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: const Text('Edit reminder'),
         // Show back button only when this screen was pushed (e.g., from Settings)
         leading: Navigator.of(context).canPop()
             ? IconButton(
@@ -80,236 +213,302 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                 onPressed: () => context.pop(),
               )
             : null,
-        actions: [
-          TextButton(
-            onPressed: _saveSettings,
-            child: const Text('Save'),
-          ),
-        ],
       ),
       body: Consumer2<NotificationProvider, UserProvider>(
         builder: (context, notificationProvider, userProvider, child) {
           return ListView(
             padding: const EdgeInsets.all(AppTheme.spacingL),
             children: [
-              // Enable/Disable Notifications
+              // Top enable switch
               Container(
-                padding: const EdgeInsets.all(AppTheme.spacingL),
-                decoration: AppTheme.cardDecoration,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Daily Notifications',
-                          style: AppTheme.bodyLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const Spacer(),
-                        Switch(
-                          value: notificationProvider.settings.enabled,
-                          onChanged: (value) {
-                            notificationProvider.toggleNotifications(
-                              userProvider.userProfile?.id,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    
-                    const SizedBox(height: AppTheme.spacingS),
-                    
-                    Text(
-                      'Receive daily affirmation notifications',
-                      style: AppTheme.bodyMedium.copyWith(
-                        color: AppTheme.textLight,
-                      ),
-                    ),
-                    
-                    if (!notificationProvider.permissionGranted) ...[
-                      const SizedBox(height: AppTheme.spacingM),
-                      Container(
-                        padding: const EdgeInsets.all(AppTheme.spacingM),
-                        decoration: BoxDecoration(
-                          color: AppTheme.warningOrange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                          border: Border.all(
-                            color: AppTheme.warningOrange.withOpacity(0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.warning_amber,
-                              color: AppTheme.warningOrange,
-                              size: 20,
-                            ),
-                            const SizedBox(width: AppTheme.spacingS),
-                            Expanded(
-                              child: Text(
-                                'Notification permission not granted',
-                                style: AppTheme.bodySmall.copyWith(
-                                  color: AppTheme.warningOrange,
-                                ),
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => notificationProvider.requestPermissions(),
-                              child: const Text('Enable'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppTheme.spacingL,
+                  vertical: AppTheme.spacingM,
                 ),
-              ),
-              
-              const SizedBox(height: AppTheme.spacingL),
-              
-              // Time Selection
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacingL),
                 decoration: AppTheme.cardDecoration,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
                   children: [
                     Text(
-                      'Notification Time',
-                      style: AppTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                      'Reminders',
+                      style: AppTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600),
                     ),
-                    
-                    const SizedBox(height: AppTheme.spacingM),
-                    
-                    InkWell(
-                      onTap: _selectTime,
-                      child: Container(
-                        padding: const EdgeInsets.all(AppTheme.spacingL),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.grey[300]!),
-                          borderRadius: BorderRadius.circular(AppTheme.radiusM),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.access_time,
-                              color: AppTheme.primaryTeal,
-                            ),
-                            const SizedBox(width: AppTheme.spacingM),
-                            Text(
-                              _formatTime(_selectedTime),
-                              style: AppTheme.bodyLarge,
-                            ),
-                            const Spacer(),
-                            const Icon(
-                              Icons.arrow_forward_ios,
-                              size: 16,
-                              color: AppTheme.textLight,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: AppTheme.spacingL),
-              
-              // Daily Count
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacingL),
-                decoration: AppTheme.cardDecoration,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Daily Affirmations',
-                      style: AppTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: AppTheme.spacingS),
-                    
-                    Text(
-                      'Number of affirmations per day: $_dailyCount',
-                      style: AppTheme.bodyMedium.copyWith(
-                        color: AppTheme.textLight,
-                      ),
-                    ),
-                    
-                    const SizedBox(height: AppTheme.spacingM),
-                    
-                    Slider(
-                      value: _dailyCount.toDouble(),
-                      min: 1,
-                      max: 10,
-                      divisions: 9,
-                      label: _dailyCount.toString(),
-                      onChanged: (value) {
-                        setState(() {
-                          _dailyCount = value.round();
-                        });
+                    const Spacer(),
+                    Switch(
+                      value: notificationProvider.settings.enabled,
+                      onChanged: (value) async {
+                        await notificationProvider.toggleNotifications(
+                          userProvider.userProfile?.id,
+                        );
                       },
                     ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: AppTheme.spacingL),
-              
-              // Days Selection
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacingL),
-                decoration: AppTheme.cardDecoration,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+
+              // Permission Banner
+              if (!notificationProvider.permissionGranted) Container(
+                padding: const EdgeInsets.all(AppTheme.spacingM),
+                decoration: BoxDecoration(
+                  color: AppTheme.warningOrange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusM),
+                  border: Border.all(
+                    color: AppTheme.warningOrange.withOpacity(0.3),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    Text(
-                      'Days of Week',
-                      style: AppTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+                    const Icon(
+                      Icons.warning_amber,
+                      color: AppTheme.warningOrange,
                     ),
-                    
-                    const SizedBox(height: AppTheme.spacingM),
-                    
-                    Wrap(
-                      spacing: AppTheme.spacingS,
-                      children: List.generate(7, (index) {
-                        final dayNumber = index + 1;
-                        final dayName = _getDayName(dayNumber);
-                        final isSelected = _selectedDays.contains(dayNumber);
-                        
-                        return FilterChip(
-                          label: Text(dayName),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedDays.add(dayNumber);
-                              } else {
-                                _selectedDays.remove(dayNumber);
-                              }
-                            });
-                          },
-                          selectedColor: AppTheme.primaryTeal.withOpacity(0.2),
-                          checkmarkColor: AppTheme.primaryTeal,
-                        );
-                      }),
+                    const SizedBox(width: AppTheme.spacingM),
+                    const Expanded(
+                      child: Text('Reminder permission not granted'),
+                    ),
+                    const SizedBox(width: AppTheme.spacingM),
+                    OutlinedButton(
+                      onPressed: () => notificationProvider.requestPermissions(),
+                      child: const Text('Enable Reminders'),
                     ),
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: AppTheme.spacingL),
-              
-              // Test Notification
+
+              // Edit reminder card styled controls
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacingL),
+                decoration: AppTheme.cardDecoration,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // How many with +/-
+                    _StepperRow(
+                      label: 'How many',
+                      valueBuilder: () => '${_dailyCount}x',
+                      onDecrement: () async {
+                        setState(() {
+                          _dailyCount = (_dailyCount - 1).clamp(1, _maxAllowedCount());
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                      onIncrement: () async {
+                        setState(() {
+                          _dailyCount = (_dailyCount + 1).clamp(1, _maxAllowedCount());
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                    ),
+
+                    const Divider(height: AppTheme.spacingXL),
+
+                    // Start at with +/- 15m
+                    _StepperRow(
+                      label: 'Start at',
+                      valueBuilder: () => _formatTime(_selectedTime),
+                      onDecrement: () async {
+                        setState(() {
+                          final m = (_selectedTime.hour * 60 + _selectedTime.minute - 15) % (24 * 60);
+                          _selectedTime = TimeOfDay(hour: m ~/ 60, minute: m % 60);
+                          _enforceCountCap();
+                          _ensureEndAfterStart();
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                      onIncrement: () async {
+                        setState(() {
+                          final m = (_selectedTime.hour * 60 + _selectedTime.minute + 15) % (24 * 60);
+                          _selectedTime = TimeOfDay(hour: m ~/ 60, minute: m % 60);
+                          _enforceCountCap();
+                          _ensureEndAfterStart();
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                    ),
+
+                    const Divider(height: AppTheme.spacingXL),
+
+                    // End at with +/- 15m (independent)
+                    _StepperRow(
+                      label: 'End at',
+                      valueBuilder: () => _formatTime(_endTime),
+                      onDecrement: () async {
+                        setState(() {
+                          final total = (_endTime.hour * 60 + _endTime.minute - 15);
+                          var minutes = (total % (24 * 60) + (24 * 60)) % (24 * 60);
+                          _endTime = TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+                          _ensureEndAfterStart();
+                          _enforceCountCap();
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                      onIncrement: () async {
+                        setState(() {
+                          final minutesTotal = (_endTime.hour * 60 + _endTime.minute + 15) % (24 * 60);
+                          _endTime = TimeOfDay(hour: minutesTotal ~/ 60, minute: minutesTotal % 60);
+                          _ensureEndAfterStart();
+                          _enforceCountCap();
+                        });
+                        await context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                                hour: _selectedTime.hour,
+                                minute: _selectedTime.minute,
+                                dailyCount: _dailyCount,
+                                selectedDays: _selectedDays,
+                                endHour: _endTime.hour,
+                                endMinute: _endTime.minute,
+                              ),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: AppTheme.spacingM),
+
+                    // Day selection
+                    Text('Repeat', style: AppTheme.bodyMedium),
+                    const SizedBox(height: AppTheme.spacingS),
+                    Wrap(
+                      spacing: AppTheme.spacingS,
+                      runSpacing: AppTheme.spacingS,
+                      children: [
+                        for (final day in [7,1,2,3,4,5,6]) // S M T W T F S
+                          ChoiceChip(
+                            label: SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: Center(
+                                child: Text(
+                                  _getDayLetter(day),
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            ),
+                            selected: _selectedDays.contains(day),
+                            onSelected: (selected) async {
+                              setState(() {
+                                if (selected) {
+                                  if (!_selectedDays.contains(day)) _selectedDays.add(day);
+                                } else {
+                                  _selectedDays.remove(day);
+                                }
+                              });
+                              await context.read<NotificationProvider>().updateSettings(
+                                context.read<UserProvider>().userProfile?.id,
+                                context.read<NotificationProvider>().settings.copyWith(
+                                      hour: _selectedTime.hour,
+                                      minute: _selectedTime.minute,
+                                      dailyCount: _dailyCount,
+                                      selectedDays: _selectedDays,
+                                    ),
+                              );
+                            },
+                            shape: const CircleBorder(),
+                            selectedColor: AppTheme.primaryTeal.withOpacity(0.2),
+                            labelStyle: Theme.of(context).textTheme.bodySmall,
+                            showCheckmark: false,
+                          ),
+                      ],
+                    ),
+
+                    const Divider(height: AppTheme.spacingXL),
+
+                    // Sound picker
+                    _EditRow(
+                      label: 'Sound',
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Text('Positive'),
+                          SizedBox(width: AppTheme.spacingS),
+                          Icon(Icons.chevron_right),
+                        ],
+                      ),
+                      onTap: () async {
+                        // Open Android channel settings directly for our channel
+                        try {
+                          final info = await PackageInfo.fromPlatform();
+                          final intent = AndroidIntent(
+                            action: 'android.settings.CHANNEL_NOTIFICATION_SETTINGS',
+                            arguments: <String, dynamic>{
+                              'android.provider.extra.APP_PACKAGE': info.packageName,
+                              'android.provider.extra.CHANNEL_ID': 'affirmation_channel',
+                            },
+                          );
+                          await intent.launch();
+                        } catch (_) {
+                          // Fallback to app-level settings
+                          final info = await PackageInfo.fromPlatform();
+                          final fallback = AndroidIntent(
+                            action: 'android.settings.APP_NOTIFICATION_SETTINGS',
+                            arguments: <String, dynamic>{
+                              'android.provider.extra.APP_PACKAGE': info.packageName,
+                            },
+                          );
+                          await fallback.launch();
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppTheme.spacingL),
+
+              // Test Reminder
               Container(
                 padding: const EdgeInsets.all(AppTheme.spacingL),
                 decoration: AppTheme.cardDecoration,
@@ -317,7 +516,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Test Notifications',
+                      'Test reminders',
                       style: AppTheme.bodyLarge.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
@@ -326,7 +525,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                     const SizedBox(height: AppTheme.spacingS),
                     
                     Text(
-                      'Send a test notification to make sure everything works',
+                      'Send a test reminder to make sure everything works',
                       style: AppTheme.bodyMedium.copyWith(
                         color: AppTheme.textLight,
                       ),
@@ -339,168 +538,12 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                       child: OutlinedButton.icon(
                         onPressed: () => notificationProvider.showTestNotification(),
                         icon: const Icon(Icons.notifications_active),
-                        label: const Text('Send Test Notification'),
+                        label: const Text('Send Test Reminder'),
                       ),
                     ),
                   ],
                 ),
               ),
-              
-              const SizedBox(height: AppTheme.spacingL),
-
-              // Scheduling Utilities
-              Container(
-                padding: const EdgeInsets.all(AppTheme.spacingL),
-                decoration: AppTheme.cardDecoration,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Scheduling Utilities',
-                      style: AppTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-
-                    const SizedBox(height: AppTheme.spacingS),
-
-                    if (!notificationProvider.permissionGranted) ...[
-                      Text(
-                        'Notifications permission not granted',
-                        style: AppTheme.bodySmall.copyWith(color: AppTheme.warningOrange),
-                      ),
-                    ],
-
-                    const SizedBox(height: AppTheme.spacingM),
-
-                    Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            await notificationProvider.openExactAlarmsSettings();
-                          },
-                          child: const Text('Open Alarm Permission'),
-                        ),
-                      ),
-                      const SizedBox(width: AppTheme.spacingM),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            await notificationProvider.reschedule();
-                            final count = await notificationProvider.getPendingScheduledCount();
-                            if (!context.mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Scheduled $count notifications')),
-                            );
-                          },
-                          child: const Text('Reschedule & Count'),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: AppTheme.spacingM),
-
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final info = await PackageInfo.fromPlatform();
-                        // Launch system notifications settings for this app
-                        const action = 'android.settings.APP_NOTIFICATION_SETTINGS';
-                        final intent = AndroidIntent(
-                          action: action,
-                          arguments: <String, dynamic>{
-                            // For Android 8+ (API 26+)
-                            'android.provider.extra.APP_PACKAGE': info.packageName,
-                            // Some OEMs/versions use these extras
-                            'app_package': info.packageName,
-                            'app_uid': 0,
-                          },
-                        );
-                        await intent.launch();
-                      },
-                      child: const Text('Open App Notification Settings'),
-                    ),
-                  ),
-                ],
-              ),
-          ),
-
-          const SizedBox(height: AppTheme.spacingL),
-
-          // Debug Panel
-          Container(
-            padding: const EdgeInsets.all(AppTheme.spacingL),
-            decoration: AppTheme.cardDecoration,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Debug Panel',
-                  style: AppTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: AppTheme.spacingS),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Notifications enabled: ${_notificationsEnabled == null ? '—' : (_notificationsEnabled! ? 'Yes' : 'No')}'),
-                          Text('Exact alarms allowed: ${_exactAlarmsAllowed == null ? '—' : (_exactAlarmsAllowed! ? 'Yes' : 'No')}'),
-                          Text('Pending scheduled: $_pendingCount'),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppTheme.spacingM),
-                    Column(
-                      children: [
-                        OutlinedButton(
-                          onPressed: _refreshDebug,
-                          child: const Text('Refresh Status'),
-                        ),
-                        const SizedBox(height: AppTheme.spacingS),
-                        OutlinedButton(
-                          onPressed: () async {
-                            await context.read<NotificationProvider>().scheduleOneOffIn(const Duration(seconds: 15));
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('One-off scheduled in 15s')),
-                            );
-                            await _refreshDebug();
-                          },
-                          child: const Text('Schedule One-off (15s)'),
-                        ),
-                        const SizedBox(height: AppTheme.spacingS),
-                        OutlinedButton(
-                          onPressed: () async {
-                            await context.read<NotificationProvider>().cancelAllNotifications();
-                            await _refreshDebug();
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Cancelled all scheduled notifications')),
-                            );
-                          },
-                          child: const Text('Cancel All'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppTheme.spacingM),
-                if (_pendingSummaries.isNotEmpty) ...[
-                  Text('Pending list:', style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: AppTheme.spacingS),
-                  ..._pendingSummaries.take(10).map((e) => Text(e)).toList(),
-                  if (_pendingSummaries.length > 10) Text('...and ${_pendingSummaries.length - 10} more'),
-                ] else ...[
-                  Text('No pending notifications.'),
-                ],
-              ],
-            ),
-          ),
             ],
           );
         },
@@ -531,6 +574,28 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   String _getDayName(int dayNumber) {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     return days[dayNumber - 1];
+  }
+
+  String _getDayLetter(int dayNumber) {
+    // 1=Mon..7=Sun
+    switch (dayNumber) {
+      case 1:
+        return 'M';
+      case 2:
+        return 'T';
+      case 3:
+        return 'W';
+      case 4:
+        return 'T';
+      case 5:
+        return 'F';
+      case 6:
+        return 'S';
+      case 7:
+        return 'S';
+      default:
+        return '';
+    }
   }
 
   Future<void> _saveSettings() async {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/affirmation_provider.dart';
+import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/affirmation_card.dart';
 import '../../widgets/daily_streak_widget.dart';
@@ -63,6 +64,18 @@ class _HomeScreenState extends State<HomeScreen>
     if (!affirmationProvider.hasAffirmations) {
       await affirmationProvider.initialize(userProvider.userProfile);
     }
+
+    // If launched/tapped from a notification, show that exact affirmation
+    try {
+      final pendingId = await StorageService().getString('pending_affirmation_id');
+      if (pendingId != null && pendingId.isNotEmpty) {
+        await affirmationProvider.setCurrentAffirmationById(
+          pendingId,
+          user: userProvider.userProfile,
+        );
+        await StorageService().remove('pending_affirmation_id');
+      }
+    } catch (_) {}
   }
 
   @override

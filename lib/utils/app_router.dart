@@ -153,12 +153,6 @@ class _MainAppShellState extends State<MainAppShell> {
       route: '/favorites',
     ),
     NavigationItem(
-      icon: Icons.notifications_outlined,
-      selectedIcon: Icons.notifications,
-      label: 'Notifications',
-      route: '/notification-settings',
-    ),
-    NavigationItem(
       icon: Icons.settings_outlined,
       selectedIcon: Icons.settings,
       label: 'Settings',

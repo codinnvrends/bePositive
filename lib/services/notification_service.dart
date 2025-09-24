@@ -3,6 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:timezone/data/latest.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import '../models/notification_settings.dart';
+import '../database/database_helper.dart';
+import '../models/user_profile.dart';
+import '../models/affirmation.dart';
+import 'storage_service.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -73,11 +77,15 @@ class NotificationService {
     );
   }
 
-  void _onNotificationTapped(NotificationResponse response) {
+  void _onNotificationTapped(NotificationResponse response) async {
     if (kDebugMode) {
       print('Notification tapped: ${response.payload}');
     }
-    // Handle notification tap - navigate to app
+    // Store the tapped affirmationId for the app to consume on resume/start
+    final payload = response.payload;
+    if (payload != null && payload.isNotEmpty) {
+      await StorageService().setString('pending_affirmation_id', payload);
+    }
   }
 
   Future<bool> requestPermissions() async {
@@ -144,33 +152,122 @@ class NotificationService {
 
     // Schedule notifications for the next 30 days
     final now = DateTime.now();
+    // Load affirmations once for selection
+    final db = DatabaseHelper();
+    final UserProfile? user = await db.getUserProfile();
+    final List<Affirmation> affirmations = user != null
+        ? await db.getPersonalizedAffirmations(user)
+        : await db.getAllAffirmations();
+    final List<Affirmation> safeAffirmations = affirmations.isNotEmpty
+        ? affirmations
+        : [
+            Affirmation(
+              id: 'fallback_${DateTime.now().millisecondsSinceEpoch}',
+              content: 'You are capable, strong, and resilient.',
+              category: 'Self-Esteem',
+              isCustom: false,
+              createdAt: DateTime.now(),
+            )
+          ];
+
     for (int day = 0; day < 30; day++) {
-      final scheduledDate = DateTime(
-        now.year,
-        now.month,
-        now.day + day,
+      final dayStart = DateTime(now.year, now.month, now.day + day);
+      final start = DateTime(
+        dayStart.year,
+        dayStart.month,
+        dayStart.day,
         settings.hour,
         settings.minute,
       );
+      final end = DateTime(
+        dayStart.year,
+        dayStart.month,
+        dayStart.day,
+        settings.endHour,
+        settings.endMinute,
+      );
 
       // Check if this day is selected
-      final weekday = scheduledDate.weekday;
+      final weekday = start.weekday;
       if (!settings.selectedDays.contains(weekday)) continue;
 
-      // Schedule up to dailyCount notifications per day, spaced by 2 hours
-      final int count = settings.dailyCount.clamp(1, 10);
-      for (int i = 0; i < count; i++) {
-        final dt = scheduledDate.add(Duration(hours: i * 2));
-        // Skip past times if scheduling for today
-        if (day == 0 && dt.isBefore(now)) continue;
-        // Ensure still on the same day; if not, skip overflowed times
-        if (dt.day != scheduledDate.day) continue;
+      // Guard: end must be after start; if not, push end to start + 15m
+      final effectiveEnd = end.isAfter(start) ? end : start.add(const Duration(minutes: 15));
 
+      // Determine timestamps
+      final int count = settings.dailyCount.clamp(1, 96); // at least 5-min spacing bound
+      if (count <= 1) {
+        final dt = start;
+        if (day == 0 && dt.isBefore(now)) continue;
+        final aff = safeAffirmations[(day + 0) % safeAffirmations.length];
         await _scheduleNotification(
-          id: day * 100 + i, // Unique ID per day/index window
+          id: day * 100 + 0,
           title: 'Daily Affirmation 🌟',
-          body: 'Your personalized affirmation is ready to inspire you!',
+          body: aff.content,
           scheduledDate: dt,
+        );
+        // overwrite payload via a direct zonedSchedule call with payload separate
+        await _flutterLocalNotificationsPlugin.zonedSchedule(
+          day * 100 + 0,
+          'Daily Affirmation 🌟',
+          aff.content,
+          tz.TZDateTime.from(dt, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'affirmation_channel',
+              'Daily Affirmations',
+              channelDescription: 'Notifications for daily affirmations',
+              importance: Importance.high,
+              priority: Priority.high,
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          payload: aff.id,
+        );
+        continue;
+      }
+
+      final totalMinutes = effectiveEnd.difference(start).inMinutes;
+      final minStep = 5; // minutes
+      final step = (totalMinutes / (count - 1)).floor();
+      final actualStep = step < minStep ? minStep : step;
+
+      for (int i = 0; i < count; i++) {
+        DateTime dt;
+        if (i == 0) {
+          dt = start;
+        } else if (i == count - 1) {
+          dt = effectiveEnd;
+        } else {
+          dt = start.add(Duration(minutes: actualStep * i));
+        }
+        if (day == 0 && dt.isBefore(now)) continue; // Skip past times today
+        if (dt.day != start.day) continue; // stay same day
+
+        final aff = safeAffirmations[(day * 97 + i) % safeAffirmations.length];
+        final id = day * 200 + i;
+        await _flutterLocalNotificationsPlugin.zonedSchedule(
+          id,
+          'Daily Affirmation 🌟',
+          aff.content,
+          tz.TZDateTime.from(dt, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'affirmation_channel',
+              'Daily Affirmations',
+              channelDescription: 'Notifications for daily affirmations',
+              importance: Importance.high,
+              priority: Priority.high,
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          payload: aff.id,
         );
       }
     }

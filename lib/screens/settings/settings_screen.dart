@@ -24,6 +24,61 @@ class _SettingsScreenState extends State<SettingsScreen>
     _setupAnimations();
   }
 
+  Widget _buildRemindersCard() {
+    return InkWell(
+      onTap: () => context.push('/notification-settings'),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.spacingL),
+        decoration: AppTheme.cardDecoration,
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppTheme.primaryTeal.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(
+                Icons.notifications_active,
+                color: AppTheme.primaryTeal,
+                size: 24,
+              ),
+            ),
+
+            const SizedBox(width: AppTheme.spacingM),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reminders',
+                    style: AppTheme.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Manage reminder frequency, time range, days and sound',
+                    style: AppTheme.bodySmall.copyWith(
+                      color: AppTheme.textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: AppTheme.textLight,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _setupAnimations() {
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -93,8 +148,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         
                         const SizedBox(height: AppTheme.spacingXL),
                         
-                        // Notifications moved to dedicated Notifications screen
-                        // (see /notification-settings). Removed from Settings page.
+                        // Set Reminders
+                        _buildSectionHeader('Set Reminders'),
+                        const SizedBox(height: AppTheme.spacingM),
+                        // Reminders entry (opens full reminders configuration screen)
+                        _buildRemindersCard(),
                         const SizedBox(height: AppTheme.spacingXL),
                         
                         // Add New Affirmations Section

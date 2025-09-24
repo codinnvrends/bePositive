@@ -17,14 +17,34 @@ class DatabaseHelper {
     return _database!;
   }
 
+  Future<void> _addNotificationEndColumns(Database db) async {
+    // Ensure end_hour and end_minute columns exist (idempotent)
+    final info = await db.rawQuery('PRAGMA table_info(notification_settings)');
+    final columns = info.map((row) => row['name'] as String).toSet();
+    if (!columns.contains('end_hour')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN end_hour INTEGER DEFAULT 21');
+    }
+    if (!columns.contains('end_minute')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN end_minute INTEGER DEFAULT 0');
+    }
+  }
+
   Future<Database> _initDatabase() async {
     final databasesPath = await getDatabasesPath();
     final path = join(databasesPath, 'be_positive.db');
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _onCreate,
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _addNotificationEndColumns(db);
+        }
+      },
+      onOpen: (db) async {
+        await _addNotificationEndColumns(db);
+      },
     );
   }
 
@@ -97,6 +117,8 @@ class DatabaseHelper {
         minute INTEGER DEFAULT 0,
         daily_count INTEGER DEFAULT 3,
         selected_days TEXT DEFAULT '1,2,3,4,5,6,7',
+        end_hour INTEGER DEFAULT 21,
+        end_minute INTEGER DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES user_profile(id)
       )
     ''');
@@ -156,6 +178,70 @@ class DatabaseHelper {
         'age_group': 'Adult (26-55)',
         'gender': null,
         'category': 'Health',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_happiness_1',
+        'content': 'Your happiness is a reflection of your inner peace and contentment.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Happiness',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_success_1',
+        'content': 'Your success is a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Success',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_wealth_1',
+        'content': 'Your wealth is a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Wealth',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_relationship_1',
+        'content': 'Your relationships are a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Relationship',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_joy_1',
+        'content': 'Your joy is a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Joy',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_wealth_1',
+        'content': 'Your wealth is a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Wealth',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_wealth_2',
+        'content': 'Wealth is for sharing.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Wealth',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_wealth_3',
+        'content': 'Wealth is for helping others.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Wealth',
         'is_custom': 0,
       },
       // Senior affirmations
