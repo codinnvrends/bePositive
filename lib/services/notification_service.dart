@@ -54,6 +54,94 @@ class NotificationService {
     _initialized = true;
   }
 
+  Future<void> scheduleCustomAffirmationWindowReminder({
+    required String affirmationId,
+    required String content,
+    required int startHour,
+    required int startMinute,
+    required int endHour,
+    required int endMinute,
+    required int dailyCount,
+    required List<int> selectedDays,
+    int horizonDays = 30,
+  }) async {
+    final now = DateTime.now();
+    final count = dailyCount.clamp(1, 96);
+    for (int day = 0; day < horizonDays; day++) {
+      final dayStart = DateTime(now.year, now.month, now.day + day);
+      final start = DateTime(dayStart.year, dayStart.month, dayStart.day, startHour, startMinute);
+      final end = DateTime(dayStart.year, dayStart.month, dayStart.day, endHour, endMinute);
+      final weekday = start.weekday;
+      if (!selectedDays.contains(weekday)) continue;
+      final effectiveEnd = end.isAfter(start) ? end : start.add(const Duration(minutes: 15));
+      if (count <= 1) {
+        if (day == 0 && start.isBefore(now)) continue;
+        final ymd = start.year * 10000 + start.month * 100 + start.day;
+        final id = 710000 + (ymd % 100000) * 1 + 0;
+        await _flutterLocalNotificationsPlugin.zonedSchedule(
+          id,
+          'Affirmation',
+          content,
+          tz.TZDateTime.from(start, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'affirmation_channel',
+              'Daily Affirmations',
+              channelDescription: 'Notifications for daily affirmations',
+              importance: Importance.high,
+              priority: Priority.high,
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          payload: affirmationId,
+        );
+        continue;
+      }
+
+      final totalMinutes = effectiveEnd.difference(start).inMinutes;
+      final minStep = 5;
+      final step = (totalMinutes / (count - 1)).floor();
+      final actualStep = step < minStep ? minStep : step;
+      for (int i = 0; i < count; i++) {
+        DateTime dt;
+        if (i == 0) {
+          dt = start;
+        } else if (i == count - 1) {
+          dt = effectiveEnd;
+        } else {
+          dt = start.add(Duration(minutes: actualStep * i));
+        }
+        if (day == 0 && dt.isBefore(now)) continue;
+        if (dt.day != start.day) continue;
+        final ymd = dt.year * 10000 + dt.month * 100 + dt.day;
+        final id = 720000 + (ymd % 100000) * 200 + i; // spread ids
+        await _flutterLocalNotificationsPlugin.zonedSchedule(
+          id,
+          'Affirmation',
+          content,
+          tz.TZDateTime.from(dt, tz.local),
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'affirmation_channel',
+              'Daily Affirmations',
+              channelDescription: 'Notifications for daily affirmations',
+              importance: Importance.high,
+              priority: Priority.high,
+              icon: '@mipmap/ic_launcher',
+            ),
+            iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+          ),
+          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+          payload: affirmationId,
+        );
+      }
+    }
+  }
+
   Future<bool> areNotificationsEnabled() async {
     return await isPermissionGranted();
   }
@@ -354,6 +442,61 @@ class NotificationService {
 
   Future<void> cancelAllNotifications() async {
     await _flutterLocalNotificationsPlugin.cancelAll();
+  }
+
+  Future<void> cancelNotificationsByPayload(String payload) async {
+    final pending = await _flutterLocalNotificationsPlugin.pendingNotificationRequests();
+    for (final req in pending) {
+      if (req.payload == payload) {
+        await _flutterLocalNotificationsPlugin.cancel(req.id);
+      }
+    }
+  }
+
+  Future<void> cancelCustomAffirmationNotifications(String affirmationId) async {
+    await cancelNotificationsByPayload(affirmationId);
+  }
+
+  Future<void> scheduleCustomAffirmationReminder({
+    required String affirmationId,
+    required String content,
+    required int hour,
+    required int minute,
+    required List<int> selectedDays,
+    int horizonDays = 30,
+  }) async {
+    final now = DateTime.now();
+    for (int day = 0; day < horizonDays; day++) {
+      final date = DateTime(now.year, now.month, now.day + day, hour, minute);
+      final weekday = date.weekday; // 1=Mon..7=Sun
+      if (!selectedDays.contains(weekday)) continue;
+      if (day == 0 && date.isBefore(now)) continue;
+
+      // Build a deterministic ID from date (yyyyMMdd) and a small suffix so we avoid collisions
+      final ymd = date.year * 10000 + date.month * 100 + date.day;
+      final id = 700000 + (ymd % 100000) * 1 + 0; // one per day
+
+      await _flutterLocalNotificationsPlugin.zonedSchedule(
+        id,
+        'Affirmation',
+        content,
+        tz.TZDateTime.from(date, tz.local),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'affirmation_channel',
+            'Daily Affirmations',
+            channelDescription: 'Notifications for daily affirmations',
+            importance: Importance.high,
+            priority: Priority.high,
+            icon: '@mipmap/ic_launcher',
+          ),
+          iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+        payload: affirmationId,
+      );
+    }
   }
 
   Future<void> cancelNotification(int id) async {

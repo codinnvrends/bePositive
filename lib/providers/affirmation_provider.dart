@@ -4,6 +4,8 @@ import '../models/affirmation.dart';
 import '../models/user_profile.dart';
 import '../database/database_helper.dart';
 import '../services/storage_service.dart';
+import '../models/custom_affirmation_reminder.dart';
+import '../services/notification_service.dart';
 
 class AffirmationProvider with ChangeNotifier {
   List<Affirmation> _affirmations = [];
@@ -25,6 +27,7 @@ class AffirmationProvider with ChangeNotifier {
   final DatabaseHelper _databaseHelper = DatabaseHelper();
   final StorageService _storageService = StorageService();
   final Random _random = Random();
+  final NotificationService _notificationService = NotificationService();
 
   Future<void> initialize(UserProfile? userProfile) async {
     _setLoading(true);
@@ -42,6 +45,92 @@ class AffirmationProvider with ChangeNotifier {
     }
   }
 
+  Future<CustomAffirmationReminder?> getCustomReminderById(String affirmationId) async {
+    try {
+      return await _databaseHelper.getCustomReminderByAffirmationId(affirmationId);
+    } catch (e) {
+      if (kDebugMode) print('Failed to load custom reminder: $e');
+      return null;
+    }
+  }
+
+  Future<bool> addCustomAffirmationWithReminder({
+    required String content,
+    required String category,
+    required bool enabled,
+    required int startHour,
+    required int startMinute,
+    required int endHour,
+    required int endMinute,
+    required int dailyCount,
+    required List<int> selectedDays,
+  }) async {
+    try {
+      // Enforce max 5 configured custom reminders (user-visible)
+      final configured = await _databaseHelper.getConfiguredCustomAffirmationsCount();
+      if (configured >= 5) {
+        return false;
+      }
+
+      final id = 'custom_${DateTime.now().millisecondsSinceEpoch}';
+      final customAffirmation = Affirmation(
+        id: id,
+        content: content,
+        category: category,
+        isCustom: true,
+        createdAt: DateTime.now(),
+      );
+
+      await _databaseHelper.insertCustomAffirmation(customAffirmation);
+      _affirmations.add(customAffirmation);
+      notifyListeners();
+
+      // Save reminder
+      final reminder = CustomAffirmationReminder(
+        affirmationId: id,
+        enabled: enabled,
+        startHour: startHour,
+        startMinute: startMinute,
+        endHour: endHour,
+        endMinute: endMinute,
+        dailyCount: dailyCount,
+        selectedDays: selectedDays,
+      );
+      try {
+        await _databaseHelper.upsertCustomReminder(reminder);
+
+        if (enabled) {
+          await _notificationService.scheduleCustomAffirmationWindowReminder(
+            affirmationId: id,
+            content: content,
+            startHour: startHour,
+            startMinute: startMinute,
+            endHour: endHour,
+            endMinute: endMinute,
+            dailyCount: dailyCount,
+            selectedDays: selectedDays,
+          );
+        }
+      } catch (e) {
+        // Rollback: delete the newly inserted affirmation and any reminder
+        try {
+          await _databaseHelper.deleteCustomReminderByAffirmationId(id);
+        } catch (_) {}
+        try {
+          await _databaseHelper.deleteCustomAffirmation(id);
+          _affirmations.removeWhere((a) => a.id == id);
+          notifyListeners();
+        } catch (_) {}
+        rethrow;
+      }
+
+      return true;
+    } catch (e) {
+      _error = 'Failed to add custom affirmation with reminder: $e';
+      if (kDebugMode) print(_error);
+      return false;
+    }
+  }
   Future<void> loadAffirmations(UserProfile? userProfile) async {
     try {
       if (userProfile != null && _affirmationSource == 'personalized') {
@@ -162,6 +251,89 @@ class AffirmationProvider with ChangeNotifier {
     final userProfile = await _databaseHelper.getUserProfile();
     await loadAffirmations(userProfile);
     notifyListeners();
+  }
+
+  Future<bool> updateCustomAffirmation({
+    required String id,
+    String? content,
+    String? category,
+    CustomAffirmationReminder? reminder,
+  }) async {
+    try {
+      // Update affirmation fields if provided
+      if (content != null || category != null) {
+        final updated = await _databaseHelper.updateCustomAffirmation(
+          id,
+          content: content,
+          category: category,
+        );
+        if (updated > 0) {
+          // Update in-memory
+          final idx = _affirmations.indexWhere((a) => a.id == id);
+          if (idx != -1) {
+            final old = _affirmations[idx];
+            _affirmations[idx] = Affirmation(
+              id: old.id,
+              content: content ?? old.content,
+              category: category ?? old.category,
+              isCustom: old.isCustom,
+              createdAt: old.createdAt,
+            );
+          }
+          // Also update current if necessary
+          if (_currentAffirmation?.id == id) {
+            _currentAffirmation = _affirmations.firstWhere((a) => a.id == id, orElse: () => _currentAffirmation!);
+          }
+        }
+      }
+
+      // Update reminder if provided
+      if (reminder != null) {
+        await _databaseHelper.upsertCustomReminder(reminder);
+        // Re-schedule notifications for this affirmation id
+        await _notificationService.cancelCustomAffirmationNotifications(id);
+        if (reminder.enabled) {
+          await _notificationService.scheduleCustomAffirmationWindowReminder(
+            affirmationId: id,
+            content: content ?? (_affirmations.firstWhere((a) => a.id == id, orElse: () => _currentAffirmation!).content),
+            startHour: reminder.startHour,
+            startMinute: reminder.startMinute,
+            endHour: reminder.endHour,
+            endMinute: reminder.endMinute,
+            dailyCount: reminder.dailyCount,
+            selectedDays: reminder.selectedDays,
+          );
+        }
+      }
+
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Failed to update custom affirmation: $e';
+      if (kDebugMode) print(_error);
+      return false;
+    }
+  }
+
+  Future<bool> deleteCustomAffirmationById(String id) async {
+    try {
+      // Cancel any scheduled notifications
+      await _notificationService.cancelCustomAffirmationNotifications(id);
+      // Delete from DB (reminder + affirmation)
+      await _databaseHelper.deleteCustomAffirmation(id);
+      // Remove from in-memory collections
+      _affirmations.removeWhere((a) => a.id == id);
+      _favoriteAffirmations.removeWhere((a) => a.id == id);
+      if (_currentAffirmation?.id == id) {
+        _currentAffirmation = _affirmations.isNotEmpty ? _affirmations.first : null;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'Failed to delete custom affirmation: $e';
+      if (kDebugMode) print(_error);
+      return false;
+    }
   }
 
   Future<void> _loadAffirmationSource() async {

@@ -104,11 +104,13 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
   }
 
   void _showErrorDialog() {
+    final userProvider = context.read<UserProvider>();
+    final message = userProvider.error ?? 'Failed to create your profile. Please try again.';
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Error'),
-        content: const Text('Failed to create your profile. Please try again.'),
+        content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),

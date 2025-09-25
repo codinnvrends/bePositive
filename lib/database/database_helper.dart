@@ -4,6 +4,7 @@ import 'package:path/path.dart';
 import '../models/user_profile.dart';
 import '../models/affirmation.dart';
 import '../models/notification_settings.dart';
+import '../models/custom_affirmation_reminder.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -15,6 +16,104 @@ class DatabaseHelper {
   Future<Database> get database async {
     _database ??= await _initDatabase();
     return _database!;
+  }
+
+  // Custom affirmation helpers
+  Future<int> getCustomAffirmationsCount() async {
+    final db = await database;
+    final result = await db.rawQuery('SELECT COUNT(*) as cnt FROM affirmations WHERE is_custom = 1');
+    final count = result.isNotEmpty ? (result.first['cnt'] as int? ?? 0) : 0;
+    return count;
+  }
+
+  Future<int> getConfiguredCustomAffirmationsCount() async {
+    final db = await database;
+    final result = await db.rawQuery('''
+      SELECT COUNT(*) as cnt
+      FROM custom_affirmation_reminders r
+      INNER JOIN affirmations a ON a.id = r.affirmation_id
+      WHERE a.is_custom = 1 AND (r.enabled = 1)
+    ''');
+    final count = result.isNotEmpty ? (result.first['cnt'] as int? ?? 0) : 0;
+    return count;
+  }
+
+  Future<int> insertCustomAffirmation(Affirmation affirmation) async {
+    final db = await database;
+    return await db.insert('affirmations', affirmation.toMap());
+  }
+
+  Future<int> deleteCustomAffirmation(String affirmationId) async {
+    final db = await database;
+    // Cascade delete reminder first
+    await db.delete('custom_affirmation_reminders', where: 'affirmation_id = ?', whereArgs: [affirmationId]);
+    return await db.delete('affirmations', where: 'id = ?', whereArgs: [affirmationId]);
+  }
+
+  Future<int> updateCustomAffirmation(
+    String affirmationId, {
+    String? content,
+    String? category,
+  }) async {
+    final db = await database;
+    final values = <String, Object?>{};
+    if (content != null) values['content'] = content;
+    if (category != null) values['category'] = category;
+    if (values.isEmpty) return 0;
+    return await db.update(
+      'affirmations',
+      values,
+      where: 'id = ? AND is_custom = 1',
+      whereArgs: [affirmationId],
+    );
+  }
+
+  // Custom reminder CRUD
+  Future<int> upsertCustomReminder(CustomAffirmationReminder reminder) async {
+    final db = await database;
+    // Try update by affirmation_id
+    final data = reminder.toMap();
+    data.remove('id');
+    // Backward compatibility: some users may have v3 table with NOT NULL hour/minute
+    // Ensure legacy columns are populated if null
+    data['hour'] = data['hour'] ?? data['start_hour'] ?? 9;
+    data['minute'] = data['minute'] ?? data['start_minute'] ?? 0;
+    final updated = await db.update(
+      'custom_affirmation_reminders',
+      data,
+      where: 'affirmation_id = ?',
+      whereArgs: [reminder.affirmationId],
+    );
+    if (updated > 0) return updated;
+    return await db.insert('custom_affirmation_reminders', reminder.toMap());
+  }
+
+  Future<CustomAffirmationReminder?> getCustomReminderByAffirmationId(String affirmationId) async {
+    final db = await database;
+    final rows = await db.query(
+      'custom_affirmation_reminders',
+      where: 'affirmation_id = ?',
+      whereArgs: [affirmationId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return CustomAffirmationReminder.fromMap(rows.first);
+  }
+
+  Future<List<Map<String, dynamic>>> getAllCustomRemindersJoined() async {
+    final db = await database;
+    // Join reminders with affirmations to get content
+    return await db.rawQuery('''
+      SELECT r.*, a.content, a.category, a.id AS affirmation_id
+      FROM custom_affirmation_reminders r
+      INNER JOIN affirmations a ON a.id = r.affirmation_id
+      WHERE a.is_custom = 1
+    ''');
+  }
+
+  Future<int> deleteCustomReminderByAffirmationId(String affirmationId) async {
+    final db = await database;
+    return await db.delete('custom_affirmation_reminders', where: 'affirmation_id = ?', whereArgs: [affirmationId]);
   }
 
   Future<void> _addNotificationEndColumns(Database db) async {
@@ -35,11 +134,46 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _addNotificationEndColumns(db);
+        }
+        if (oldVersion < 3) {
+          // Add table for per-affirmation reminders
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS custom_affirmation_reminders (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              affirmation_id TEXT NOT NULL,
+              enabled INTEGER DEFAULT 1,
+              hour INTEGER NOT NULL,
+              minute INTEGER NOT NULL,
+              selected_days TEXT DEFAULT '1,2,3,4,5,6,7',
+              FOREIGN KEY (affirmation_id) REFERENCES affirmations(id)
+            )
+          ''');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_car_affirmation_id ON custom_affirmation_reminders(affirmation_id)');
+        }
+        if (oldVersion < 4) {
+          // Add scheduling window and count columns for custom reminders
+          final info = await db.rawQuery('PRAGMA table_info(custom_affirmation_reminders)');
+          final columns = info.map((row) => row['name'] as String).toSet();
+          if (!columns.contains('start_hour')) {
+            await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN start_hour INTEGER');
+          }
+          if (!columns.contains('start_minute')) {
+            await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN start_minute INTEGER');
+          }
+          if (!columns.contains('end_hour')) {
+            await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN end_hour INTEGER');
+          }
+          if (!columns.contains('end_minute')) {
+            await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN end_minute INTEGER');
+          }
+          if (!columns.contains('daily_count')) {
+            await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN daily_count INTEGER DEFAULT 1');
+          }
         }
       },
       onOpen: (db) async {
@@ -120,6 +254,24 @@ class DatabaseHelper {
         end_hour INTEGER DEFAULT 21,
         end_minute INTEGER DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES user_profile(id)
+      )
+    ''');
+
+    // Custom Affirmation Reminders Table (includes legacy hour/minute and new window fields)
+    await db.execute('''
+      CREATE TABLE custom_affirmation_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        affirmation_id TEXT NOT NULL,
+        enabled INTEGER DEFAULT 1,
+        hour INTEGER,
+        minute INTEGER,
+        start_hour INTEGER,
+        start_minute INTEGER,
+        end_hour INTEGER,
+        end_minute INTEGER,
+        daily_count INTEGER DEFAULT 1,
+        selected_days TEXT DEFAULT '1,2,3,4,5,6,7',
+        FOREIGN KEY (affirmation_id) REFERENCES affirmations(id)
       )
     ''');
 
@@ -205,30 +357,6 @@ class DatabaseHelper {
         'is_custom': 0,
       },
       {
-        'id': 'adult_relationship_1',
-        'content': 'Your relationships are a reflection of your hard work and dedication.',
-        'age_group': 'Adult (26-55)',
-        'gender': null,
-        'category': 'Relationship',
-        'is_custom': 0,
-      },
-      {
-        'id': 'adult_joy_1',
-        'content': 'Your joy is a reflection of your hard work and dedication.',
-        'age_group': 'Adult (26-55)',
-        'gender': null,
-        'category': 'Joy',
-        'is_custom': 0,
-      },
-      {
-        'id': 'adult_wealth_1',
-        'content': 'Your wealth is a reflection of your hard work and dedication.',
-        'age_group': 'Adult (26-55)',
-        'gender': null,
-        'category': 'Wealth',
-        'is_custom': 0,
-      },
-      {
         'id': 'adult_wealth_2',
         'content': 'Wealth is for sharing.',
         'age_group': 'Adult (26-55)',
@@ -244,6 +372,23 @@ class DatabaseHelper {
         'category': 'Wealth',
         'is_custom': 0,
       },
+      {
+        'id': 'adult_relationship_1',
+        'content': 'Your relationships are a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Relationship',
+        'is_custom': 0,
+      },
+      {
+        'id': 'adult_joy_1',
+        'content': 'Your joy is a reflection of your hard work and dedication.',
+        'age_group': 'Adult (26-55)',
+        'gender': null,
+        'category': 'Joy',
+        'is_custom': 0,
+      },
+      
       // Senior affirmations
       {
         'id': 'senior_self_esteem_1',
@@ -306,25 +451,33 @@ class DatabaseHelper {
     ];
 
     for (final affirmation in affirmations) {
-      await db.insert('affirmations', affirmation);
+      // Use INSERT OR IGNORE to avoid UNIQUE constraint errors if data exists
+      await db.rawInsert(
+        'INSERT OR IGNORE INTO affirmations (id, content, age_group, gender, category, is_custom) VALUES (?, ?, ?, ?, ?, ?)',
+        [
+          affirmation['id'],
+          affirmation['content'],
+          affirmation['age_group'],
+          affirmation['gender'],
+          affirmation['category'],
+          affirmation['is_custom'],
+        ],
+      );
     }
   }
 
   // User Profile operations
   Future<int> insertUserProfile(UserProfile profile) async {
     final db = await database;
-    
-    // Insert profile
-    await db.insert('user_profile', profile.toMap());
-    
-    // Insert focus areas
-    for (final focusArea in profile.focusAreas) {
-      await db.insert('user_focus_areas', {
-        'user_id': profile.id,
-        'focus_area': focusArea,
-      });
-    }
-    
+    await db.transaction((txn) async {
+      await txn.insert('user_profile', profile.toMap());
+      for (final focusArea in profile.focusAreas) {
+        await txn.insert('user_focus_areas', {
+          'user_id': profile.id,
+          'focus_area': focusArea,
+        });
+      }
+    });
     return 1;
   }
 
@@ -386,7 +539,7 @@ class DatabaseHelper {
       where: '''
         (age_group IS NULL OR age_group = ?) AND
         (gender IS NULL OR gender = ?) AND
-        category IN (${profile.focusAreas.map((_) => '?').join(',')})
+        (is_custom = 1 OR category IN (${profile.focusAreas.map((_) => '?').join(',')}))
       ''',
       whereArgs: [profile.ageGroup, profile.gender, ...profile.focusAreas],
     );

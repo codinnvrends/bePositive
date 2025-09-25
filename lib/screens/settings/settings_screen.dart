@@ -5,6 +5,7 @@ import '../../providers/user_provider.dart';
 import '../../providers/affirmation_provider.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/focus_areas_chips.dart';
+import '../../models/custom_affirmation_reminder.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -159,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                         _buildSectionHeader('Add New Affirmations'),
                         const SizedBox(height: AppTheme.spacingM),
                         
-                        _buildAddAffirmationCard(),
+                        _buildAddAffirmationCard(affirmationProvider),
                         
                         const SizedBox(height: AppTheme.spacingM),
                         
@@ -244,54 +245,56 @@ class _SettingsScreenState extends State<SettingsScreen>
   // Notification card removed from Settings; configuration now lives under
   // the dedicated Notifications tab/screen.
 
-  Widget _buildAddAffirmationCard() {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacingL),
-      decoration: AppTheme.cardDecoration,
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: AppTheme.secondaryPurple.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(24),
+  Widget _buildAddAffirmationCard(AffirmationProvider affirmationProvider) {
+    final used = affirmationProvider.affirmations.where((a) => a.isCustom).length;
+    final limit = 5;
+    return InkWell(
+      onTap: () => context.push('/add-custom-affirmation'),
+      child: Container(
+        padding: const EdgeInsets.all(AppTheme.spacingL),
+        decoration: AppTheme.cardDecoration,
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppTheme.secondaryPurple.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(
+                Icons.add,
+                color: AppTheme.secondaryPurple,
+                size: 24,
+              ),
             ),
-            child: const Icon(
-              Icons.add,
-              color: AppTheme.secondaryPurple,
-              size: 24,
-            ),
-          ),
-          
-          const SizedBox(width: AppTheme.spacingM),
-          
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Add New Affirmation',
-                  style: AppTheme.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
+            const SizedBox(width: AppTheme.spacingM),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Add New Affirmation',
+                    style: AppTheme.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  'Create your own personalized affirmations',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: AppTheme.textLight,
+                  Text(
+                    'Create your own personalized affirmations • $used/$limit used',
+                    style: AppTheme.bodySmall.copyWith(
+                      color: AppTheme.textLight,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          
-          const Icon(
-            Icons.arrow_forward_ios,
-            size: 16,
-            color: AppTheme.textLight,
-          ),
-        ],
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 16,
+              color: AppTheme.textLight,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -347,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ),
                   IconButton(
                     onPressed: () {
-                      // Edit affirmation
+                      _showEditCustomAffirmationSheet(context, affirmation.id, affirmation.content, affirmation.category);
                     },
                     icon: const Icon(Icons.edit),
                     iconSize: 16,
@@ -358,6 +361,299 @@ class _SettingsScreenState extends State<SettingsScreen>
             )),
         ],
       ),
+    );
+  }
+
+  void _showEditCustomAffirmationSheet(BuildContext context, String id, String content, String category) {
+    final contentController = TextEditingController(text: content);
+    final categoryController = TextEditingController(text: category);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return FutureBuilder<CustomAffirmationReminder?>(
+          future: context.read<AffirmationProvider>().getCustomReminderById(id),
+          builder: (context, snap) {
+            final initial = snap.data;
+            return StatefulBuilder(
+              builder: (context, setSheetState) {
+                bool reminderEnabled = initial?.enabled ?? true;
+                TimeOfDay startTime = TimeOfDay(hour: initial?.startHour ?? 9, minute: initial?.startMinute ?? 0);
+                TimeOfDay endTime = TimeOfDay(hour: initial?.endHour ?? 21, minute: initial?.endMinute ?? 0);
+                int dailyCount = initial?.dailyCount ?? 1;
+                final Set<int> days = {...(initial?.selectedDays ?? const [1,2,3,4,5,6,7])};
+
+                int minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
+                void ensureEndAfterStart() {
+                  final s = minutesOf(startTime);
+                  final e = minutesOf(endTime);
+                  if (e <= s) {
+                    final newEnd = (s + 15) % (24 * 60);
+                    endTime = TimeOfDay(hour: newEnd ~/ 60, minute: newEnd % 60);
+                  }
+                }
+                int maxAllowedCount() {
+                  final total = (minutesOf(endTime) - minutesOf(startTime)).clamp(0, 24 * 60);
+                  final maxByFive = (total ~/ 5);
+                  return maxByFive.clamp(1, 96);
+                }
+                void enforceCountCap() {
+                  final max = maxAllowedCount();
+                  if (dailyCount > max) dailyCount = max;
+                  if (dailyCount < 1) dailyCount = 1;
+                }
+
+                String formatTime(TimeOfDay t) {
+                  final h = t.hourOfPeriod == 0 ? 12 : t.hourOfPeriod;
+                  final m = t.minute.toString().padLeft(2, '0');
+                  final p = t.period == DayPeriod.am ? 'AM' : 'PM';
+                  return '$h:$m $p';
+                }
+                String dayLetter(int d) {
+                  switch (d) {
+                    case 1: return 'M';
+                    case 2: return 'T';
+                    case 3: return 'W';
+                    case 4: return 'T';
+                    case 5: return 'F';
+                    case 6: return 'S';
+                    case 7: return 'S';
+                    default: return '';
+                  }
+                }
+
+                return Padding(
+                  padding: EdgeInsets.only(
+                    left: AppTheme.spacingL,
+                    right: AppTheme.spacingL,
+                    top: AppTheme.spacingL,
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom + AppTheme.spacingL,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Edit affirmation', style: AppTheme.bodyLarge.copyWith(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: AppTheme.spacingM),
+                        TextField(
+                          controller: contentController,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Affirmation',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.spacingM),
+                        TextField(
+                          controller: categoryController,
+                          decoration: const InputDecoration(
+                            labelText: 'Category',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                        const SizedBox(height: AppTheme.spacingL),
+
+                        // Reminder section
+                        Container(
+                          padding: const EdgeInsets.all(AppTheme.spacingL),
+                          decoration: AppTheme.cardDecoration,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text('Reminder', style: AppTheme.bodyMedium.copyWith(fontWeight: FontWeight.w600)),
+                                  const Spacer(),
+                                  Switch(
+                                    value: reminderEnabled,
+                                    onChanged: (v) => setSheetState(() => reminderEnabled = v),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppTheme.spacingS),
+                              // How many
+                              Row(
+                                children: [
+                                  SizedBox(
+                                    width: 160,
+                                    child: Text('How many', style: AppTheme.bodyMedium),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline),
+                                    onPressed: () => setSheetState(() { dailyCount = (dailyCount - 1).clamp(1, maxAllowedCount()); }),
+                                  ),
+                                  Expanded(
+                                    child: Center(child: Text('${dailyCount}x')),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    onPressed: () => setSheetState(() { dailyCount = (dailyCount + 1).clamp(1, maxAllowedCount()); }),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              // Start at
+                              Row(
+                                children: [
+                                  SizedBox(width: 160, child: Text('Start at', style: AppTheme.bodyMedium)),
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline),
+                                    onPressed: () => setSheetState(() {
+                                      final m = (startTime.hour * 60 + startTime.minute - 15) % (24 * 60);
+                                      startTime = TimeOfDay(hour: m ~/ 60, minute: m % 60);
+                                      enforceCountCap();
+                                      ensureEndAfterStart();
+                                    }),
+                                  ),
+                                  Expanded(child: Center(child: Text(formatTime(startTime)))),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    onPressed: () => setSheetState(() {
+                                      final m = (startTime.hour * 60 + startTime.minute + 15) % (24 * 60);
+                                      startTime = TimeOfDay(hour: m ~/ 60, minute: m % 60);
+                                      enforceCountCap();
+                                      ensureEndAfterStart();
+                                    }),
+                                  ),
+                                ],
+                              ),
+                              const Divider(),
+                              // End at
+                              Row(
+                                children: [
+                                  SizedBox(width: 160, child: Text('End at', style: AppTheme.bodyMedium)),
+                                  IconButton(
+                                    icon: const Icon(Icons.remove_circle_outline),
+                                    onPressed: () => setSheetState(() {
+                                      final total = (endTime.hour * 60 + endTime.minute - 15);
+                                      final minutes = (total % (24 * 60) + (24 * 60)) % (24 * 60);
+                                      endTime = TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+                                      ensureEndAfterStart();
+                                      enforceCountCap();
+                                    }),
+                                  ),
+                                  Expanded(child: Center(child: Text(formatTime(endTime)))),
+                                  IconButton(
+                                    icon: const Icon(Icons.add_circle_outline),
+                                    onPressed: () => setSheetState(() {
+                                      final minutes = (endTime.hour * 60 + endTime.minute + 15) % (24 * 60);
+                                      endTime = TimeOfDay(hour: minutes ~/ 60, minute: minutes % 60);
+                                      ensureEndAfterStart();
+                                      enforceCountCap();
+                                    }),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: AppTheme.spacingS),
+                              Text('Repeat', style: AppTheme.bodyMedium),
+                              const SizedBox(height: AppTheme.spacingS),
+                              Wrap(
+                                spacing: AppTheme.spacingS,
+                                runSpacing: AppTheme.spacingS,
+                                children: [
+                                  for (final d in const [7,1,2,3,4,5,6])
+                                    ChoiceChip(
+                                      label: SizedBox(
+                                        width: 28,
+                                        height: 28,
+                                        child: Center(child: Text(dayLetter(d))),
+                                      ),
+                                      selected: days.contains(d),
+                                      onSelected: (sel) => setSheetState(() {
+                                        if (sel) {
+                                          days.add(d);
+                                        } else {
+                                          days.remove(d);
+                                        }
+                                      }),
+                                      shape: const CircleBorder(),
+                                      selectedColor: AppTheme.primaryTeal.withOpacity(0.2),
+                                      showCheckmark: false,
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: AppTheme.spacingL),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () async {
+                                  final updatedContent = contentController.text.trim();
+                                  final updatedCategory = categoryController.text.trim().isEmpty
+                                      ? category
+                                      : categoryController.text.trim();
+                                  final reminder = CustomAffirmationReminder(
+                                    affirmationId: id,
+                                    enabled: reminderEnabled,
+                                    startHour: startTime.hour,
+                                    startMinute: startTime.minute,
+                                    endHour: endTime.hour,
+                                    endMinute: endTime.minute,
+                                    dailyCount: dailyCount,
+                                    selectedDays: days.toList()..sort(),
+                                  );
+                                  final ok = await context.read<AffirmationProvider>().updateCustomAffirmation(
+                                        id: id,
+                                        content: updatedContent.isEmpty ? content : updatedContent,
+                                        category: updatedCategory,
+                                        reminder: reminder,
+                                      );
+                                  if (!mounted) return;
+                                  Navigator.of(ctx).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(ok ? 'Affirmation updated' : 'Failed to update')),
+                                  );
+                                },
+                                icon: const Icon(Icons.save),
+                                label: const Text('Save'),
+                              ),
+                            ),
+                            const SizedBox(width: AppTheme.spacingM),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (dctx) => AlertDialog(
+                                      title: const Text('Delete affirmation?'),
+                                      content: const Text('This will remove the affirmation and its reminder.'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.of(dctx).pop(false), child: const Text('Cancel')),
+                                        TextButton(onPressed: () => Navigator.of(dctx).pop(true), child: const Text('Delete')),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed != true) return;
+                                  final ok = await context.read<AffirmationProvider>().deleteCustomAffirmationById(id);
+                                  if (!mounted) return;
+                                  Navigator.of(ctx).pop();
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text(ok ? 'Affirmation deleted' : 'Failed to delete')),
+                                  );
+                                },
+                                icon: const Icon(Icons.delete_outline),
+                                label: const Text('Delete'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 

@@ -11,6 +11,7 @@ import '../screens/favorites/favorites_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/settings/profile_settings_screen.dart';
 import '../screens/settings/notification_settings_screen.dart';
+import '../screens/settings/add_custom_affirmation_screen.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -94,6 +95,11 @@ class AppRouter {
         path: '/profile-settings',
         name: 'profile-settings',
         builder: (context, state) => const ProfileSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/add-custom-affirmation',
+        name: 'add-custom-affirmation',
+        builder: (context, state) => const AddCustomAffirmationScreen(),
       ),
       // Notification settings route moved inside ShellRoute above
     ],
