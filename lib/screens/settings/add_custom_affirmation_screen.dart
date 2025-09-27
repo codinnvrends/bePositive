@@ -101,8 +101,8 @@ class _AddCustomAffirmationScreenState extends State<AddCustomAffirmationScreen>
 
   bool _reminderEnabled = true;
   TimeOfDay _startTime = const TimeOfDay(hour: 9, minute: 0);
-  TimeOfDay _endTime = const TimeOfDay(hour: 21, minute: 0);
-  int _dailyCount = 1;
+  TimeOfDay _endTime = const TimeOfDay(hour: 17, minute: 0);
+  int _dailyCount = 4;
   final Set<int> _days = {1,2,3,4,5,6,7};
 
   @override

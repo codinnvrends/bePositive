@@ -378,13 +378,26 @@ class _SettingsScreenState extends State<SettingsScreen>
           future: context.read<AffirmationProvider>().getCustomReminderById(id),
           builder: (context, snap) {
             final initial = snap.data;
+            // Hoisted state for the sheet – persists across setSheetState calls
+            bool seeded = false;
+            bool reminderEnabled = true;
+            TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
+            TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
+            int dailyCount = 4;
+            final Set<int> days = {1,2,3,4,5,6,7};
+
             return StatefulBuilder(
               builder: (context, setSheetState) {
-                bool reminderEnabled = initial?.enabled ?? true;
-                TimeOfDay startTime = TimeOfDay(hour: initial?.startHour ?? 9, minute: initial?.startMinute ?? 0);
-                TimeOfDay endTime = TimeOfDay(hour: initial?.endHour ?? 21, minute: initial?.endMinute ?? 0);
-                int dailyCount = initial?.dailyCount ?? 1;
-                final Set<int> days = {...(initial?.selectedDays ?? const [1,2,3,4,5,6,7])};
+                if (!seeded && initial != null) {
+                  reminderEnabled = initial.enabled;
+                  startTime = TimeOfDay(hour: initial.startHour, minute: initial.startMinute);
+                  endTime = TimeOfDay(hour: initial.endHour, minute: initial.endMinute);
+                  dailyCount = initial.dailyCount;
+                  days
+                    ..clear()
+                    ..addAll(initial.selectedDays);
+                  seeded = true;
+                }
 
                 int minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
                 void ensureEndAfterStart() {

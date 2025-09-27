@@ -319,26 +319,6 @@ class FavoriteAffirmationCard extends StatelessWidget {
             ),
           ),
           
-          if (affirmation.isCustom) ...[
-            const SizedBox(height: AppTheme.spacingM),
-            Row(
-              children: [
-                const Icon(
-                  Icons.edit,
-                  size: 16,
-                  color: AppTheme.textLight,
-                ),
-                const SizedBox(width: AppTheme.spacingXS),
-                Text(
-                  'Custom affirmation',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: AppTheme.textLight,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-            ),
-          ],
         ],
       ),
     );
