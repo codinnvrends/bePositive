@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:be_positive/providers/user_provider.dart';
 import 'package:be_positive/providers/notification_provider.dart';
 import 'package:be_positive/utils/app_theme.dart';
+import 'package:be_positive/widgets/frequency_selector.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -144,6 +145,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   late TimeOfDay _endTime;
   late int _dailyCount;
   late List<int> _selectedDays;
+  late bool _useFrequencyMode;
+  late int _frequencyValue;
+  late String _frequencyUnit;
+  late bool _showOnLockScreen;
 
   @override
   void initState() {
@@ -155,6 +160,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     _endTime = TimeOfDay(hour: settings.endHour, minute: settings.endMinute);
     _dailyCount = settings.dailyCount;
     _selectedDays = List.from(settings.selectedDays);
+    _useFrequencyMode = settings.useFrequencyMode;
+    _frequencyValue = settings.frequencyValue;
+    _frequencyUnit = settings.frequencyUnit;
+    _showOnLockScreen = settings.showOnLockScreen;
 
     // Initialize provider (permissions + load settings) after first frame
     // so that context.read works safely and UI can update via notifyListeners
@@ -170,6 +179,10 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           _endTime = TimeOfDay(hour: s.endHour, minute: s.endMinute);
           _dailyCount = s.dailyCount;
           _selectedDays = List.from(s.selectedDays);
+          _useFrequencyMode = s.useFrequencyMode;
+          _frequencyValue = s.frequencyValue;
+          _frequencyUnit = s.frequencyUnit;
+          _showOnLockScreen = s.showOnLockScreen;
         });
       }
     });
@@ -278,7 +291,85 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
               const SizedBox(height: AppTheme.spacingL),
 
-              // Edit reminder card styled controls
+              // Frequency Selector
+              FrequencySelector(
+                useFrequencyMode: _useFrequencyMode,
+                frequencyValue: _frequencyValue,
+                frequencyUnit: _frequencyUnit,
+                onChanged: (useFrequencyMode, value, unit) {
+                  setState(() {
+                    _useFrequencyMode = useFrequencyMode;
+                    _frequencyValue = value;
+                    _frequencyUnit = unit;
+                  });
+                  // Auto-save frequency settings
+                  context.read<NotificationProvider>().updateSettings(
+                    context.read<UserProvider>().userProfile?.id,
+                    context.read<NotificationProvider>().settings.copyWith(
+                      useFrequencyMode: _useFrequencyMode,
+                      frequencyValue: _frequencyValue,
+                      frequencyUnit: _frequencyUnit,
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: AppTheme.spacingL),
+
+              // Lock Screen Settings
+              Container(
+                padding: const EdgeInsets.all(AppTheme.spacingL),
+                decoration: AppTheme.cardDecoration,
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.lock_outline,
+                      color: AppTheme.primaryTeal,
+                      size: 24,
+                    ),
+                    const SizedBox(width: AppTheme.spacingM),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Show on Lock Screen',
+                            style: AppTheme.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Display full affirmation content on lock screen',
+                            style: AppTheme.bodySmall.copyWith(
+                              color: AppTheme.textLight,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _showOnLockScreen,
+                      onChanged: (value) {
+                        setState(() {
+                          _showOnLockScreen = value;
+                        });
+                        // Auto-save lock screen setting
+                        context.read<NotificationProvider>().updateSettings(
+                          context.read<UserProvider>().userProfile?.id,
+                          context.read<NotificationProvider>().settings.copyWith(
+                            showOnLockScreen: _showOnLockScreen,
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: AppTheme.spacingL),
+
+              // Edit reminder card styled controls (only show for window-based mode)
+              if (!_useFrequencyMode)
               Container(
                 padding: const EdgeInsets.all(AppTheme.spacingL),
                 decoration: AppTheme.cardDecoration,
@@ -607,13 +698,18 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       minute: _selectedTime.minute,
       dailyCount: _dailyCount,
       selectedDays: _selectedDays,
+      endHour: _endTime.hour,
+      endMinute: _endTime.minute,
+      useFrequencyMode: _useFrequencyMode,
+      frequencyValue: _frequencyValue,
+      frequencyUnit: _frequencyUnit,
+      showOnLockScreen: _showOnLockScreen,
     );
     
     final success = await notificationProvider.updateSettings(
       userProvider.userProfile?.id,
       newSettings,
     );
-    
     if (!mounted) return;
     
     ScaffoldMessenger.of(context).showSnackBar(

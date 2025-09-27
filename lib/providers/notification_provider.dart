@@ -101,8 +101,11 @@ class NotificationProvider with ChangeNotifier {
       await _databaseHelper.saveNotificationSettings(uid, newSettings);
       _settings = newSettings;
       
-      // Schedule notifications with new settings
-      await _notificationService.scheduleAffirmationNotifications(newSettings);
+      // Schedule notifications with new settings using rich notifications
+      await _notificationService.scheduleRichAffirmationNotifications(
+        newSettings,
+        showOnLockScreen: newSettings.showOnLockScreen,
+      );
       
       _error = null;
       notifyListeners();
@@ -204,7 +207,10 @@ class NotificationProvider with ChangeNotifier {
   Future<void> reschedule() async {
     try {
       await _notificationService.cancelAllNotifications();
-      await _notificationService.scheduleAffirmationNotifications(_settings);
+      await _notificationService.scheduleRichAffirmationNotifications(
+        _settings,
+        showOnLockScreen: _settings.showOnLockScreen,
+      );
     } catch (e) {
       _error = 'Failed to reschedule notifications: $e';
       if (kDebugMode) print(_error);

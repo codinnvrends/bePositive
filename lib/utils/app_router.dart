@@ -11,6 +11,7 @@ import '../screens/settings/settings_screen.dart';
 import '../screens/settings/profile_settings_screen.dart';
 import '../screens/settings/notification_settings_screen.dart';
 import '../screens/settings/add_custom_affirmation_screen.dart';
+import '../screens/notification/notification_card_screen.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
@@ -93,6 +94,16 @@ class AppRouter {
         path: '/add-custom-affirmation',
         name: 'add-custom-affirmation',
         builder: (context, state) => const AddCustomAffirmationScreen(),
+      ),
+      
+      // Notification Card Screen (standalone, not in shell)
+      GoRoute(
+        path: '/notification-card',
+        name: 'notification-card',
+        builder: (context, state) {
+          final affirmationId = state.uri.queryParameters['affirmationId'];
+          return NotificationCardScreen(affirmationId: affirmationId);
+        },
       ),
       // Notification settings route moved inside ShellRoute above
     ],

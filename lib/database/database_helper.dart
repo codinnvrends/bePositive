@@ -128,13 +128,32 @@ class DatabaseHelper {
     }
   }
 
+  Future<void> _addNotificationFrequencyColumns(Database db) async {
+    // Ensure frequency-based notification columns exist (idempotent)
+    final info = await db.rawQuery('PRAGMA table_info(notification_settings)');
+    final columns = info.map((row) => row['name'] as String).toSet();
+    
+    if (!columns.contains('use_frequency_mode')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN use_frequency_mode INTEGER DEFAULT 0');
+    }
+    if (!columns.contains('frequency_value')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN frequency_value INTEGER DEFAULT 2');
+    }
+    if (!columns.contains('frequency_unit')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN frequency_unit TEXT DEFAULT "hours"');
+    }
+    if (!columns.contains('show_on_lock_screen')) {
+      await db.execute('ALTER TABLE notification_settings ADD COLUMN show_on_lock_screen INTEGER DEFAULT 1');
+    }
+  }
+
   Future<Database> _initDatabase() async {
     final databasesPath = await getDatabasesPath();
     final path = join(databasesPath, 'be_positive.db');
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -175,9 +194,14 @@ class DatabaseHelper {
             await db.execute('ALTER TABLE custom_affirmation_reminders ADD COLUMN daily_count INTEGER DEFAULT 1');
           }
         }
+        if (oldVersion < 5) {
+          // Add frequency-based notification columns
+          await _addNotificationFrequencyColumns(db);
+        }
       },
       onOpen: (db) async {
         await _addNotificationEndColumns(db);
+        await _addNotificationFrequencyColumns(db);
       },
     );
   }
@@ -253,6 +277,10 @@ class DatabaseHelper {
         selected_days TEXT DEFAULT '1,2,3,4,5,6,7',
         end_hour INTEGER DEFAULT 21,
         end_minute INTEGER DEFAULT 0,
+        use_frequency_mode INTEGER DEFAULT 0,
+        frequency_value INTEGER DEFAULT 2,
+        frequency_unit TEXT DEFAULT 'hours',
+        show_on_lock_screen INTEGER DEFAULT 1,
         FOREIGN KEY (user_id) REFERENCES user_profile(id)
       )
     ''');

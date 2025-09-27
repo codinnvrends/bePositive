@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/affirmation_provider.dart';
 import '../../services/storage_service.dart';
+import '../../services/notification_service.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/affirmation_card.dart';
-import '../../widgets/focus_areas_chips.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,12 +21,14 @@ class _HomeScreenState extends State<HomeScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<Offset> _slideAnimation;
+  bool _notificationsEnabled = true; // Default to true to avoid showing warning during loading
 
   @override
   void initState() {
     super.initState();
     _setupAnimations();
     _initializeDataWithTimeout();
+    _checkNotificationPermissions();
   }
 
   Future<void> _initializeDataWithTimeout() async {
@@ -116,6 +119,21 @@ class _HomeScreenState extends State<HomeScreen>
       }
       if (affirmationProvider.isLoading) {
         affirmationProvider.forceStopLoading();
+      }
+    }
+  }
+
+  Future<void> _checkNotificationPermissions() async {
+    try {
+      final isEnabled = await NotificationService().isPermissionGranted();
+      if (mounted) {
+        setState(() {
+          _notificationsEnabled = isEnabled;
+        });
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error checking notification permissions: $e');
       }
     }
   }
@@ -240,87 +258,145 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ),
                         
-                        // Content
-                        SliverPadding(
-                          padding: const EdgeInsets.all(AppTheme.spacingL),
-                          sliver: SliverList(
-                            delegate: SliverChildListDelegate([
-                              // Focus areas
-                              FocusAreasChips(
-                                focusAreas: userProvider.displayFocusAreas,
-                              ),
-                              
-                              const SizedBox(height: AppTheme.spacingXL),
-                              
-                              // Main affirmation card with swipe gestures
-                              if (affirmationProvider.currentAffirmation != null)
-                                GestureDetector(
-                                  onPanEnd: (details) {
-                                    // Swipe right (positive velocity) = Previous
-                                    // Swipe left (negative velocity) = Next
-                                    const double swipeThreshold = 300.0;
-                                    
-                                    if (details.velocity.pixelsPerSecond.dx > swipeThreshold) {
-                                      // Swipe right - Previous affirmation
-                                      if (kDebugMode) print('Swiped right - Previous affirmation');
-                                      _showPreviousAffirmation();
-                                    } else if (details.velocity.pixelsPerSecond.dx < -swipeThreshold) {
-                                      // Swipe left - Next affirmation
-                                      if (kDebugMode) print('Swiped left - Next affirmation');
-                                      affirmationProvider.getNextAffirmation();
-                                    }
-                                  },
-                                  child: AffirmationCard(
-                                    affirmation: affirmationProvider.currentAffirmation!,
-                                    onNext: () => affirmationProvider.getNextAffirmation(),
-                                    onFavorite: () => _toggleFavorite(
-                                      userProvider.userProfile!.id,
-                                      affirmationProvider.currentAffirmation!,
-                                    ),
-                                    isFavorite: _isFavorite(
-                                      affirmationProvider.currentAffirmation!,
-                                      affirmationProvider.favoriteAffirmations,
-                                    ),
-                                  ),
-                                )
-                              else
-                                _buildEmptyState(),
-                              
-                              // Swipe hint
-                              if (affirmationProvider.currentAffirmation != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: AppTheme.spacingM),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      const Icon(
-                                        Icons.swipe_left,
-                                        size: 16,
-                                        color: AppTheme.textLight,
-                                      ),
-                                      const SizedBox(width: AppTheme.spacingXS),
-                                      Text(
-                                        'Swipe left for next, right for previous',
-                                        style: AppTheme.bodySmall.copyWith(
-                                          color: AppTheme.textLight,
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                      const SizedBox(width: AppTheme.spacingXS),
-                                      const Icon(
-                                        Icons.swipe_right,
-                                        size: 16,
-                                        color: AppTheme.textLight,
-                                      ),
-                                    ],
+                        // Content - Full screen affirmation card
+                        SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppTheme.spacingL),
+                            child: Column(
+                              children: [
+                                // Main affirmation card with swipe gestures - takes most of the space
+                                Expanded(
+                                  child: Center(
+                                    child: affirmationProvider.currentAffirmation != null
+                                        ? GestureDetector(
+                                            onPanEnd: (details) {
+                                              // Swipe right (positive velocity) = Previous
+                                              // Swipe left (negative velocity) = Next
+                                              const double swipeThreshold = 300.0;
+                                              
+                                              if (details.velocity.pixelsPerSecond.dx > swipeThreshold) {
+                                                // Swipe right - Previous affirmation
+                                                if (kDebugMode) print('Swiped right - Previous affirmation');
+                                                _showPreviousAffirmation();
+                                              } else if (details.velocity.pixelsPerSecond.dx < -swipeThreshold) {
+                                                // Swipe left - Next affirmation
+                                                if (kDebugMode) print('Swiped left - Next affirmation');
+                                                affirmationProvider.getNextAffirmation();
+                                              }
+                                            },
+                                            child: AffirmationCard(
+                                              affirmation: affirmationProvider.currentAffirmation!,
+                                              onNext: () => affirmationProvider.getNextAffirmation(),
+                                              onFavorite: () => _toggleFavorite(
+                                                userProvider.userProfile!.id,
+                                                affirmationProvider.currentAffirmation!,
+                                              ),
+                                              isFavorite: _isFavorite(
+                                                affirmationProvider.currentAffirmation!,
+                                                affirmationProvider.favoriteAffirmations,
+                                              ),
+                                            ),
+                                          )
+                                        : _buildEmptyState(),
                                   ),
                                 ),
-                              
-                              const SizedBox(height: AppTheme.spacingXL),
-                              
-                              // Stats section
-                              _buildStatsSection(affirmationProvider),
-                            ]),
+                                
+                                // Swipe hint at the bottom
+                                if (affirmationProvider.currentAffirmation != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                      top: AppTheme.spacingM,
+                                      bottom: AppTheme.spacingS,
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(
+                                          Icons.swipe_left,
+                                          size: 16,
+                                          color: AppTheme.textLight,
+                                        ),
+                                        const SizedBox(width: AppTheme.spacingXS),
+                                        Text(
+                                          'Swipe left for next, right for previous',
+                                          style: AppTheme.bodySmall.copyWith(
+                                            color: AppTheme.textLight,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppTheme.spacingXS),
+                                        const Icon(
+                                          Icons.swipe_right,
+                                          size: 16,
+                                          color: AppTheme.textLight,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                
+                                // Notification warning at the bottom
+                                if (!_notificationsEnabled)
+                                  Container(
+                                    margin: const EdgeInsets.only(top: AppTheme.spacingS),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: AppTheme.spacingM,
+                                      vertical: AppTheme.spacingS,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.orange.withOpacity(0.3),
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.notifications_off,
+                                          color: Colors.orange[700],
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: AppTheme.spacingS),
+                                        Expanded(
+                                          child: Text(
+                                            'Enable notifications in Settings to receive daily affirmations',
+                                            style: AppTheme.bodySmall.copyWith(
+                                              color: Colors.orange[700],
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: AppTheme.spacingS),
+                                        GestureDetector(
+                                          onTap: () {
+                                            context.goNamed('notification-settings');
+                                          },
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: AppTheme.spacingS,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: Colors.orange[700],
+                                              borderRadius: BorderRadius.circular(12),
+                                            ),
+                                            child: Text(
+                                              'Settings',
+                                              style: AppTheme.bodySmall.copyWith(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -366,74 +442,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildStatsSection(AffirmationProvider affirmationProvider) {
-    return Container(
-      padding: const EdgeInsets.all(AppTheme.spacingL),
-      decoration: AppTheme.cardDecoration,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Your Progress',
-            style: AppTheme.headingSmall,
-          ),
-          
-          const SizedBox(height: AppTheme.spacingM),
-          
-          Row(
-            children: [
-              Expanded(
-                child: _buildStatItem(
-                  'Total Affirmations',
-                  '${affirmationProvider.totalAffirmations}',
-                  Icons.auto_awesome,
-                ),
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  'Favorites',
-                  '${affirmationProvider.totalFavorites}',
-                  Icons.favorite,
-                ),
-              ),
-              Expanded(
-                child: _buildStatItem(
-                  'Daily Streak',
-                  '${affirmationProvider.dailyStreak}',
-                  Icons.local_fire_department,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatItem(String label, String value, IconData icon) {
-    return Column(
-      children: [
-        Icon(
-          icon,
-          color: AppTheme.primaryTeal,
-          size: 32,
-        ),
-        const SizedBox(height: AppTheme.spacingS),
-        Text(
-          value,
-          style: AppTheme.headingMedium.copyWith(
-            color: AppTheme.primaryTeal,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        Text(
-          label,
-          style: AppTheme.bodySmall,
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
 
   bool _isFavorite(dynamic affirmation, List<dynamic> favorites) {
     return favorites.any((fav) => fav.id == affirmation.id);

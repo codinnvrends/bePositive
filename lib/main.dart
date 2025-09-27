@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:go_router/go_router.dart';
 
 import 'providers/user_provider.dart';
 import 'providers/affirmation_provider.dart';
@@ -118,6 +119,11 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // Check for pending notification actions when app starts
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handlePendingNotificationAction();
+    });
   }
 
   @override
@@ -146,10 +152,60 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
     }
   }
 
-  void _onAppResumed() {
+  void _onAppResumed() async {
     // App came to foreground
-    // Refresh data if needed
+    // Check for pending notification actions
+    await _handlePendingNotificationAction();
     debugPrint('App resumed');
+  }
+
+  Future<void> _handlePendingNotificationAction() async {
+    try {
+      final pendingAffirmationId = await StorageService().getString('pending_affirmation_id');
+      final notificationAction = await StorageService().getString('notification_action');
+      
+      if (pendingAffirmationId != null && notificationAction != null) {
+        // Clear the pending action
+        await StorageService().remove('pending_affirmation_id');
+        await StorageService().remove('notification_action');
+        
+        if (mounted && context.mounted) {
+          // Add a small delay to ensure the app is fully loaded
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          if (mounted && context.mounted) {
+            try {
+              final router = GoRouter.of(context);
+              
+              if (notificationAction == 'view_all_cards') {
+                // Navigate directly to home screen (cards view) for browsing all affirmations
+                debugPrint('Navigating to cards view (home)');
+                // Navigate to home screen where user can swipe through cards
+                router.go('/home');
+              } else if (notificationAction == 'show_specific_card') {
+                // Navigate to specific notification card screen
+                debugPrint('Navigating to specific card: $pendingAffirmationId');
+                router.goNamed(
+                  'notification-card',
+                  queryParameters: {'affirmationId': pendingAffirmationId},
+                );
+              } else if (notificationAction == 'show_card_only') {
+                // Legacy support - navigate to notification card screen
+                debugPrint('Navigating to card (legacy): $pendingAffirmationId');
+                router.goNamed(
+                  'notification-card',
+                  queryParameters: {'affirmationId': pendingAffirmationId},
+                );
+              }
+            } catch (e) {
+              debugPrint('Error during navigation: $e');
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error handling pending notification action: $e');
+    }
   }
 
   void _onAppPaused() {
