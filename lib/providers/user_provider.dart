@@ -18,14 +18,23 @@ class UserProvider with ChangeNotifier {
   final StorageService _storageService = StorageService();
 
   Future<void> loadUserProfile() async {
+    // Prevent concurrent loading calls
+    if (_isLoading) {
+      if (kDebugMode) print('UserProvider: Already loading, skipping duplicate call');
+      return;
+    }
+    
     _setLoading(true);
     try {
+      if (kDebugMode) print('UserProvider: Loading user profile...');
       _userProfile = await _databaseHelper.getUserProfile();
+      if (kDebugMode) print('UserProvider: User profile loaded: ${_userProfile != null ? "Found" : "Not found"}');
       _error = null;
     } catch (e) {
       _error = 'Failed to load user profile: $e';
-      if (kDebugMode) print(_error);
+      if (kDebugMode) print('UserProvider: Error loading profile: $_error');
     } finally {
+      if (kDebugMode) print('UserProvider: Finishing loadUserProfile, setting loading to false');
       _setLoading(false);
     }
   }
@@ -61,8 +70,9 @@ class UserProvider with ChangeNotifier {
     } catch (e) {
       _error = 'Failed to create user profile: $e';
       if (kDebugMode) print(_error);
-      _setLoading(false);
       return false;
+    } finally {
+      _setLoading(false);
     }
   }
 
@@ -91,8 +101,9 @@ class UserProvider with ChangeNotifier {
     } catch (e) {
       _error = 'Failed to update user profile: $e';
       if (kDebugMode) print(_error);
-      _setLoading(false);
       return false;
+    } finally {
+      _setLoading(false);
     }
   }
 
@@ -112,12 +123,23 @@ class UserProvider with ChangeNotifier {
   }
 
   void _setLoading(bool loading) {
+    if (kDebugMode) {
+      print('UserProvider: Setting loading to $loading');
+    }
     _isLoading = loading;
     notifyListeners();
   }
 
   void clearError() {
     _error = null;
+    notifyListeners();
+  }
+
+  void forceStopLoading() {
+    if (kDebugMode) {
+      print('UserProvider: Force stopping loading');
+    }
+    _isLoading = false;
     notifyListeners();
   }
 

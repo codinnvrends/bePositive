@@ -37,8 +37,15 @@ Future<void> _initializeServices() async {
     // Initialize storage service
     await StorageService().initialize();
     
-    // Initialize notification service
-    await NotificationService().initialize();
+    // Initialize notification service with error handling
+    try {
+      await NotificationService().initialize();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Failed to initialize notification service: $e');
+      }
+      // Continue app initialization even if notifications fail
+    }
 
     // If device rebooted, reschedule notifications from persisted settings
     final bootPending = await StorageService().getBool('boot_reschedule_pending') ?? false;

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
@@ -5,7 +6,6 @@ import '../../providers/affirmation_provider.dart';
 import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/affirmation_card.dart';
-import '../../widgets/daily_streak_widget.dart';
 import '../../widgets/focus_areas_chips.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -25,7 +25,30 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _setupAnimations();
-    _initializeData();
+    _initializeDataWithTimeout();
+  }
+
+  Future<void> _initializeDataWithTimeout() async {
+    try {
+      await _initializeData().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          if (kDebugMode) print('Home initialization timed out');
+          // Force providers to stop loading
+          final userProvider = context.read<UserProvider>();
+          final affirmationProvider = context.read<AffirmationProvider>();
+          
+          if (userProvider.isLoading) {
+            userProvider.forceStopLoading();
+          }
+          if (affirmationProvider.isLoading) {
+            affirmationProvider.forceStopLoading();
+          }
+        },
+      );
+    } catch (e) {
+      if (kDebugMode) print('Home initialization failed: $e');
+    }
   }
 
   void _setupAnimations() {
@@ -54,28 +77,47 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _initializeData() async {
-    final userProvider = context.read<UserProvider>();
-    final affirmationProvider = context.read<AffirmationProvider>();
-    
-    if (!userProvider.hasProfile) {
-      await userProvider.loadUserProfile();
-    }
-    
-    if (!affirmationProvider.hasAffirmations) {
-      await affirmationProvider.initialize(userProvider.userProfile);
-    }
-
-    // If launched/tapped from a notification, show that exact affirmation
     try {
-      final pendingId = await StorageService().getString('pending_affirmation_id');
-      if (pendingId != null && pendingId.isNotEmpty) {
-        await affirmationProvider.setCurrentAffirmationById(
-          pendingId,
-          user: userProvider.userProfile,
-        );
-        await StorageService().remove('pending_affirmation_id');
+      final userProvider = context.read<UserProvider>();
+      final affirmationProvider = context.read<AffirmationProvider>();
+      
+      if (!userProvider.hasProfile && !userProvider.isLoading) {
+        if (kDebugMode) print('Home: Loading user profile because no profile found');
+        await userProvider.loadUserProfile();
+      } else if (kDebugMode) {
+        print('Home: Skipping user profile load - hasProfile: ${userProvider.hasProfile}, isLoading: ${userProvider.isLoading}');
       }
-    } catch (_) {}
+      
+      if (!affirmationProvider.hasAffirmations) {
+        await affirmationProvider.initialize(userProvider.userProfile);
+      }
+
+      // If launched/tapped from a notification, show that exact affirmation
+      try {
+        final pendingId = await StorageService().getString('pending_affirmation_id');
+        if (pendingId != null && pendingId.isNotEmpty) {
+          await affirmationProvider.setCurrentAffirmationById(
+            pendingId,
+            user: userProvider.userProfile,
+          );
+          await StorageService().remove('pending_affirmation_id');
+        }
+      } catch (_) {}
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error initializing home data: $e');
+      }
+      // Force providers to stop loading state
+      final userProvider = context.read<UserProvider>();
+      final affirmationProvider = context.read<AffirmationProvider>();
+      
+      if (userProvider.isLoading) {
+        userProvider.forceStopLoading();
+      }
+      if (affirmationProvider.isLoading) {
+        affirmationProvider.forceStopLoading();
+      }
+    }
   }
 
   @override
@@ -92,13 +134,58 @@ class _HomeScreenState extends State<HomeScreen>
           builder: (context, userProvider, affirmationProvider, child) {
             if (userProvider.isLoading || affirmationProvider.isLoading) {
               return const Center(
-                child: CircularProgressIndicator(),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(
+                      'Loading your affirmations...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
               );
             }
 
             if (!userProvider.hasProfile) {
               return const Center(
                 child: Text('No user profile found'),
+              );
+            }
+
+            if (affirmationProvider.error != null) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      size: 64,
+                      color: Colors.grey,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      affirmationProvider.error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () async {
+                        affirmationProvider.clearError();
+                        await affirmationProvider.initialize(userProvider.userProfile);
+                      },
+                      child: const Text('Try Again'),
+                    ),
+                  ],
+                ),
               );
             }
 
@@ -116,10 +203,11 @@ class _HomeScreenState extends State<HomeScreen>
                           floating: true,
                           backgroundColor: Colors.transparent,
                           elevation: 0,
+                          expandedHeight: 80,
                           flexibleSpace: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: AppTheme.spacingL,
-                              vertical: AppTheme.spacingM,
+                              vertical: AppTheme.spacingL,
                             ),
                             child: Row(
                               children: [
@@ -142,15 +230,11 @@ class _HomeScreenState extends State<HomeScreen>
                                   'Affirm!',
                                   style: AppTheme.headingMedium.copyWith(
                                     fontWeight: FontWeight.bold,
+                                    height: 1.2,
                                   ),
                                 ),
                                 
                                 const Spacer(),
-                                
-                                // Daily streak
-                                DailyStreakWidget(
-                                  streak: affirmationProvider.dailyStreak,
-                                ),
                               ],
                             ),
                           ),
@@ -168,47 +252,69 @@ class _HomeScreenState extends State<HomeScreen>
                               
                               const SizedBox(height: AppTheme.spacingXL),
                               
-                              // Main affirmation card
+                              // Main affirmation card with swipe gestures
                               if (affirmationProvider.currentAffirmation != null)
-                                AffirmationCard(
-                                  affirmation: affirmationProvider.currentAffirmation!,
-                                  onNext: () => affirmationProvider.getNextAffirmation(),
-                                  onFavorite: () => _toggleFavorite(
-                                    userProvider.userProfile!.id,
-                                    affirmationProvider.currentAffirmation!,
-                                  ),
-                                  isFavorite: _isFavorite(
-                                    affirmationProvider.currentAffirmation!,
-                                    affirmationProvider.favoriteAffirmations,
+                                GestureDetector(
+                                  onPanEnd: (details) {
+                                    // Swipe right (positive velocity) = Previous
+                                    // Swipe left (negative velocity) = Next
+                                    const double swipeThreshold = 300.0;
+                                    
+                                    if (details.velocity.pixelsPerSecond.dx > swipeThreshold) {
+                                      // Swipe right - Previous affirmation
+                                      if (kDebugMode) print('Swiped right - Previous affirmation');
+                                      _showPreviousAffirmation();
+                                    } else if (details.velocity.pixelsPerSecond.dx < -swipeThreshold) {
+                                      // Swipe left - Next affirmation
+                                      if (kDebugMode) print('Swiped left - Next affirmation');
+                                      affirmationProvider.getNextAffirmation();
+                                    }
+                                  },
+                                  child: AffirmationCard(
+                                    affirmation: affirmationProvider.currentAffirmation!,
+                                    onNext: () => affirmationProvider.getNextAffirmation(),
+                                    onFavorite: () => _toggleFavorite(
+                                      userProvider.userProfile!.id,
+                                      affirmationProvider.currentAffirmation!,
+                                    ),
+                                    isFavorite: _isFavorite(
+                                      affirmationProvider.currentAffirmation!,
+                                      affirmationProvider.favoriteAffirmations,
+                                    ),
                                   ),
                                 )
                               else
                                 _buildEmptyState(),
                               
-                              const SizedBox(height: AppTheme.spacingXL),
-                              
-                              // Navigation buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showPreviousAffirmation(),
-                                      icon: const Icon(Icons.arrow_back_ios),
-                                      label: const Text('Previous'),
-                                    ),
+                              // Swipe hint
+                              if (affirmationProvider.currentAffirmation != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: AppTheme.spacingM),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(
+                                        Icons.swipe_left,
+                                        size: 16,
+                                        color: AppTheme.textLight,
+                                      ),
+                                      const SizedBox(width: AppTheme.spacingXS),
+                                      Text(
+                                        'Swipe left for next, right for previous',
+                                        style: AppTheme.bodySmall.copyWith(
+                                          color: AppTheme.textLight,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      const SizedBox(width: AppTheme.spacingXS),
+                                      const Icon(
+                                        Icons.swipe_right,
+                                        size: 16,
+                                        color: AppTheme.textLight,
+                                      ),
+                                    ],
                                   ),
-                                  
-                                  const SizedBox(width: AppTheme.spacingM),
-                                  
-                                  Expanded(
-                                    flex: 2,
-                                    child: ElevatedButton(
-                                      onPressed: () => affirmationProvider.getNextAffirmation(),
-                                      child: const Text('Next Affirmation'),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                ),
                               
                               const SizedBox(height: AppTheme.spacingXL),
                               

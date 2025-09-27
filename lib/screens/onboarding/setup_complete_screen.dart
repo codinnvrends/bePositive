@@ -145,6 +145,7 @@ class _SetupCompleteScreenState extends State<SetupCompleteScreen>
                                 style: AppTheme.headingLarge.copyWith(
                                   color: Colors.white,
                                   fontSize: 32,
+                                  height: 1.2,
                                 ),
                                 textAlign: TextAlign.center,
                               ),

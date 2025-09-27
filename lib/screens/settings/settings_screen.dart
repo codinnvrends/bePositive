@@ -118,10 +118,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                     floating: true,
                     backgroundColor: Colors.transparent,
                     elevation: 0,
+                    expandedHeight: 80,
                     flexibleSpace: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppTheme.spacingL,
-                        vertical: AppTheme.spacingM,
+                        vertical: AppTheme.spacingL,
                       ),
                       child: Row(
                         children: [
@@ -129,6 +130,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                             'Settings',
                             style: AppTheme.headingMedium.copyWith(
                               fontWeight: FontWeight.bold,
+                              height: 1.2,
                             ),
                           ),
                         ],

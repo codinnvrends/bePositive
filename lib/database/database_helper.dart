@@ -534,14 +534,33 @@ class DatabaseHelper {
   Future<List<Affirmation>> getPersonalizedAffirmations(UserProfile profile) async {
     final db = await database;
     
-    final List<Map<String, dynamic>> maps = await db.query(
-      'affirmations',
-      where: '''
+    // Build the query to match user's profile and focus areas
+    String whereClause;
+    List<dynamic> whereArgs;
+    
+    if (profile.focusAreas.isNotEmpty) {
+      // Include affirmations that match age/gender AND (custom OR focus areas)
+      final placeholders = profile.focusAreas.map((_) => '?').join(',');
+      whereClause = '''
         (age_group IS NULL OR age_group = ?) AND
         (gender IS NULL OR gender = ?) AND
-        (is_custom = 1 OR category IN (${profile.focusAreas.map((_) => '?').join(',')}))
-      ''',
-      whereArgs: [profile.ageGroup, profile.gender, ...profile.focusAreas],
+        (is_custom = 1 OR category IN ($placeholders))
+      ''';
+      whereArgs = [profile.ageGroup, profile.gender, ...profile.focusAreas];
+    } else {
+      // If no focus areas, include custom affirmations and universal ones
+      whereClause = '''
+        (age_group IS NULL OR age_group = ?) AND
+        (gender IS NULL OR gender = ?) AND
+        is_custom = 1
+      ''';
+      whereArgs = [profile.ageGroup, profile.gender];
+    }
+    
+    final List<Map<String, dynamic>> maps = await db.query(
+      'affirmations',
+      where: whereClause,
+      whereArgs: whereArgs,
     );
     
     return maps.map((map) => Affirmation.fromMap(map)).toList();
@@ -551,6 +570,20 @@ class DatabaseHelper {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query('affirmations');
     return maps.map((map) => Affirmation.fromMap(map)).toList();
+  }
+
+  // Debug method to check database state
+  Future<void> debugDatabaseState() async {
+    final db = await database;
+    final count = await db.rawQuery('SELECT COUNT(*) as count FROM affirmations');
+    final customCount = await db.rawQuery('SELECT COUNT(*) as count FROM affirmations WHERE is_custom = 1');
+    final categories = await db.rawQuery('SELECT DISTINCT category FROM affirmations WHERE category IS NOT NULL');
+    
+    print('=== DATABASE DEBUG ===');
+    print('Total affirmations: ${count.first['count']}');
+    print('Custom affirmations: ${customCount.first['count']}');
+    print('Available categories: ${categories.map((c) => c['category']).join(', ')}');
+    print('=====================');
   }
 
   Future<int> insertAffirmation(Affirmation affirmation) async {

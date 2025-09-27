@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../utils/app_theme.dart';
 
@@ -16,8 +17,6 @@ class DailyStreakWidget extends StatefulWidget {
 class _DailyStreakWidgetState extends State<DailyStreakWidget>
     with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _rotationAnimation;
 
   @override
   void initState() {
@@ -30,23 +29,6 @@ class _DailyStreakWidgetState extends State<DailyStreakWidget>
       duration: const Duration(milliseconds: 1000),
       vsync: this,
     );
-
-    _scaleAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.elasticOut,
-    ));
-
-    _rotationAnimation = Tween<double>(
-      begin: -0.1,
-      end: 0.1,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeInOut,
-    ));
-
     _animationController.forward();
   }
 
@@ -67,18 +49,22 @@ class _DailyStreakWidgetState extends State<DailyStreakWidget>
 
   @override
   Widget build(BuildContext context) {
+    if (kDebugMode) {
+      print('DailyStreakWidget: Building with streak ${widget.streak}');
+    }
     return AnimatedBuilder(
       animation: _animationController,
       builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: Transform.rotate(
-            angle: _rotationAnimation.value,
-            child: Container(
+        return Container(
+              constraints: const BoxConstraints(
+                minHeight: 40,
+                minWidth: 120,
+              ),
               padding: const EdgeInsets.symmetric(
                 horizontal: AppTheme.spacingM,
-                vertical: AppTheme.spacingS,
+                vertical: AppTheme.spacingM,
               ),
+              alignment: Alignment.center,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
@@ -97,27 +83,37 @@ class _DailyStreakWidgetState extends State<DailyStreakWidget>
                   ),
                 ],
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.local_fire_department,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                  const SizedBox(width: AppTheme.spacingXS),
-                  Text(
-                    'Daily Streak: ${widget.streak}',
-                    style: AppTheme.bodySmall.copyWith(
+              child: Align(
+                alignment: Alignment.center,
+                child: IntrinsicHeight(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                    const Icon(
+                      Icons.local_fire_department,
                       color: Colors.white,
-                      fontWeight: FontWeight.w600,
+                      size: 16,
                     ),
+                    const SizedBox(width: AppTheme.spacingXS),
+                    Text(
+                      'Daily Streak: ${widget.streak}',
+                      style: AppTheme.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        height: 1.0,
+                      ),
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.visible,
+                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
-        );
+            );
       },
     );
   }

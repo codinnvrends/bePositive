@@ -59,7 +59,7 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen>
 
   void _onNext() {
     if (_selectedGender != null && widget.selectedAgeGroup != null) {
-      context.go('/focus-areas', extra: {
+      context.push('/focus-areas', extra: {
         'ageGroup': widget.selectedAgeGroup!,
         'gender': _selectedGender!,
       });
@@ -127,9 +127,16 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen>
                 Row(
                   children: [
                     Expanded(
+                      flex: 1,
                       child: OutlinedButton(
                         onPressed: _onBack,
-                        child: const Text('Back'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text(
+                          'Back',
+                          style: TextStyle(fontSize: 16),
+                        ),
                       ),
                     ),
                     
@@ -139,7 +146,13 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen>
                       flex: 2,
                       child: ElevatedButton(
                         onPressed: _selectedGender != null ? _onNext : null,
-                        child: const Text('Finish'),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text(
+                          'Next',
+                          style: TextStyle(fontSize: 16),
+                        ),
                       ),
                     ),
                   ],

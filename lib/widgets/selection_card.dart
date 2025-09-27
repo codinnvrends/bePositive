@@ -152,8 +152,8 @@ class MultiSelectCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppTheme.radiusM),
           child: Container(
             padding: const EdgeInsets.symmetric(
-              horizontal: AppTheme.spacingL,
-              vertical: AppTheme.spacingM,
+              horizontal: AppTheme.spacingM,
+              vertical: AppTheme.spacingS,
             ),
             decoration: BoxDecoration(
               color: isSelected ? AppTheme.primaryTeal : AppTheme.cardBackground,
@@ -163,8 +163,8 @@ class MultiSelectCard extends StatelessWidget {
                 width: 1,
               ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 if (icon != null) ...[
                   Icon(
@@ -172,19 +172,25 @@ class MultiSelectCard extends StatelessWidget {
                     color: isSelected ? Colors.white : AppTheme.textDark,
                     size: 20,
                   ),
-                  const SizedBox(width: AppTheme.spacingS),
+                  const SizedBox(height: AppTheme.spacingXS),
                 ],
                 
-                Text(
-                  title,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: isSelected ? Colors.white : AppTheme.textDark,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                Flexible(
+                  child: Text(
+                    title,
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: isSelected ? Colors.white : AppTheme.textDark,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 
                 if (isSelected) ...[
-                  const SizedBox(width: AppTheme.spacingS),
+                  const SizedBox(height: AppTheme.spacingXS),
                   const Icon(
                     Icons.check,
                     color: Colors.white,

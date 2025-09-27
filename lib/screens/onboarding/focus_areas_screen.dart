@@ -86,7 +86,7 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
       );
 
       if (success && mounted) {
-        context.go('/setup-complete');
+        context.go('/home');
       } else if (mounted) {
         _showErrorDialog();
       }
@@ -167,7 +167,7 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
                   child: GridView.builder(
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      childAspectRatio: 2.5,
+                      childAspectRatio: 2.0,
                       crossAxisSpacing: AppTheme.spacingM,
                       mainAxisSpacing: AppTheme.spacingM,
                     ),
@@ -244,9 +244,16 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
                 Row(
                   children: [
                     Expanded(
+                      flex: 1,
                       child: OutlinedButton(
                         onPressed: _isLoading ? null : _onBack,
-                        child: const Text('Back'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
+                        child: const Text(
+                          'Back',
+                          style: TextStyle(fontSize: 16),
+                        ),
                       ),
                     ),
                     
@@ -258,6 +265,9 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
                         onPressed: _selectedFocusAreas.isNotEmpty && !_isLoading 
                             ? _onFinish 
                             : null,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                        ),
                         child: _isLoading
                             ? const SizedBox(
                                 width: 20,
@@ -267,7 +277,11 @@ class _FocusAreasScreenState extends State<FocusAreasScreen>
                                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                                 ),
                               )
-                            : const Text('Start Affirming!'),
+                            : const Text(
+                                'Start Affirming!',
+                                style: TextStyle(fontSize: 16),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                     ),
                   ],

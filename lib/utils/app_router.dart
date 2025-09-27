@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../screens/splash_screen.dart';
 import '../screens/onboarding/welcome_screen.dart';
 import '../screens/onboarding/age_selection_screen.dart';
 import '../screens/onboarding/gender_selection_screen.dart';
@@ -15,14 +14,8 @@ import '../screens/settings/add_custom_affirmation_screen.dart';
 
 class AppRouter {
   static final GoRouter _router = GoRouter(
-    initialLocation: '/splash',
+    initialLocation: '/welcome',
     routes: [
-      // Splash Screen
-      GoRoute(
-        path: '/splash',
-        name: 'splash',
-        builder: (context, state) => const SplashScreen(),
-      ),
 
       // Onboarding Flow
       GoRoute(

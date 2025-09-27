@@ -21,26 +21,69 @@ class NotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    try {
+      // Try with ic_launcher first
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const DarwinInitializationSettings initializationSettingsIOS =
-        DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
+      const DarwinInitializationSettings initializationSettingsIOS =
+          DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
 
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
-    );
+      const InitializationSettings initializationSettings =
+          InitializationSettings(
+        android: initializationSettingsAndroid,
+        iOS: initializationSettingsIOS,
+      );
 
-    await _flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-    );
+      await _flutterLocalNotificationsPlugin.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: _onNotificationTapped,
+      );
+    } catch (e) {
+      if (kDebugMode) {
+        print('Failed to initialize notifications with ic_launcher: $e');
+        print('Trying fallback initialization...');
+      }
+      
+      // Fallback: try with default Android icon
+      try {
+        const AndroidInitializationSettings fallbackAndroidSettings =
+            AndroidInitializationSettings('@android:drawable/ic_dialog_info');
+
+        const DarwinInitializationSettings initializationSettingsIOS =
+            DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+
+        const InitializationSettings fallbackSettings =
+            InitializationSettings(
+          android: fallbackAndroidSettings,
+          iOS: initializationSettingsIOS,
+        );
+
+        await _flutterLocalNotificationsPlugin.initialize(
+          fallbackSettings,
+          onDidReceiveNotificationResponse: _onNotificationTapped,
+        );
+        
+        if (kDebugMode) {
+          print('Notification service initialized with fallback icon');
+        }
+      } catch (fallbackError) {
+        if (kDebugMode) {
+          print('Failed to initialize notifications with fallback: $fallbackError');
+        }
+        // Mark as initialized to prevent repeated attempts
+        _initialized = true;
+        return;
+      }
+    }
 
     // Initialize timezone database for zoned scheduling
     try {

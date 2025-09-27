@@ -54,7 +54,7 @@ class _AgeSelectionScreenState extends State<AgeSelectionScreen>
 
   void _onNext() {
     if (_selectedAgeGroup != null) {
-      context.go('/gender-selection', extra: _selectedAgeGroup);
+      context.push('/gender-selection', extra: _selectedAgeGroup);
     }
   }
 
@@ -88,7 +88,9 @@ class _AgeSelectionScreenState extends State<AgeSelectionScreen>
                 // Title
                 Text(
                   'First, your age group',
-                  style: AppTheme.headingMedium,
+                  style: AppTheme.headingMedium.copyWith(
+                    height: 1.2,
+                  ),
                 ),
                 
                 const SizedBox(height: AppTheme.spacingS),

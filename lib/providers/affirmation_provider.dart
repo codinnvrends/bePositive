@@ -32,14 +32,37 @@ class AffirmationProvider with ChangeNotifier {
   Future<void> initialize(UserProfile? userProfile) async {
     _setLoading(true);
     try {
+      // Debug database state
+      if (kDebugMode) {
+        await _databaseHelper.debugDatabaseState();
+      }
+      
       await _loadDailyStreak();
       await _loadAffirmationSource();
       await loadAffirmations(userProfile);
       await loadFavorites(userProfile?.id);
-      _error = null;
+      
+      // If no affirmations loaded, try to load all affirmations as fallback
+      if (_affirmations.isEmpty) {
+        if (kDebugMode) print('No personalized affirmations found, loading all affirmations');
+        _affirmations = await _databaseHelper.getAllAffirmations();
+        if (kDebugMode) print('Fallback: Found ${_affirmations.length} total affirmations');
+      }
+      
+      // If still no affirmations, there's a database issue
+      if (_affirmations.isEmpty) {
+        _error = 'No affirmations available. Please check your internet connection or try again later.';
+        if (kDebugMode) print('Database appears to be empty - no affirmations found');
+      } else {
+        // Ensure we have a current affirmation
+        if (_currentAffirmation == null) {
+          _currentAffirmation = _affirmations[_random.nextInt(_affirmations.length)];
+        }
+        _error = null;
+      }
     } catch (e) {
       _error = 'Failed to initialize affirmations: $e';
-      if (kDebugMode) print(_error);
+      if (kDebugMode) print('Affirmation initialization error: $e');
     } finally {
       _setLoading(false);
     }
@@ -134,19 +157,34 @@ class AffirmationProvider with ChangeNotifier {
   Future<void> loadAffirmations(UserProfile? userProfile) async {
     try {
       if (userProfile != null && _affirmationSource == 'personalized') {
+        if (kDebugMode) {
+          print('Loading personalized affirmations for user: ${userProfile.ageGroup}, ${userProfile.gender}, focus areas: ${userProfile.focusAreas}');
+        }
         _affirmations = await _databaseHelper.getPersonalizedAffirmations(userProfile);
+        if (kDebugMode) {
+          print('Found ${_affirmations.length} personalized affirmations');
+        }
       } else {
+        if (kDebugMode) {
+          print('Loading all affirmations (source: $_affirmationSource)');
+        }
         _affirmations = await _databaseHelper.getAllAffirmations();
+        if (kDebugMode) {
+          print('Found ${_affirmations.length} total affirmations');
+        }
       }
       
       if (_affirmations.isNotEmpty && _currentAffirmation == null) {
         _currentAffirmation = _affirmations[_random.nextInt(_affirmations.length)];
+        if (kDebugMode) {
+          print('Set current affirmation: ${_currentAffirmation?.content}');
+        }
       }
       
       notifyListeners();
     } catch (e) {
       _error = 'Failed to load affirmations: $e';
-      if (kDebugMode) print(_error);
+      if (kDebugMode) print('Error loading affirmations: $_error');
     }
   }
 
@@ -368,20 +406,38 @@ class AffirmationProvider with ChangeNotifier {
 
   Future<void> _loadDailyStreak() async {
     _dailyStreak = await _storageService.getDailyStreak();
+    if (kDebugMode) {
+      print('AffirmationProvider: Loaded daily streak: $_dailyStreak');
+    }
   }
 
   void _setLoading(bool loading) {
+    if (kDebugMode) {
+      print('AffirmationProvider: Setting loading to $loading');
+    }
     _isLoading = loading;
     notifyListeners();
   }
 
   void clearError() {
     _error = null;
+    if (kDebugMode) {
+      print('AffirmationProvider: Cleared error');
+    }
+    notifyListeners();
+  }
+
+  void forceStopLoading() {
+    if (kDebugMode) {
+      print('AffirmationProvider: Force stopping loading');
+    }
+    _isLoading = false;
     notifyListeners();
   }
 
   // Helper methods for UI
   bool get hasAffirmations => _affirmations.isNotEmpty;
+  bool get hasCurrentAffirmation => _currentAffirmation != null;
   bool get hasFavorites => _favoriteAffirmations.isNotEmpty;
   int get totalAffirmations => _affirmations.length;
   int get totalFavorites => _favoriteAffirmations.length;

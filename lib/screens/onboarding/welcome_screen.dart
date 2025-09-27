@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../utils/app_theme.dart';
+import '../../providers/user_provider.dart';
+import '../../services/storage_service.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
@@ -19,6 +22,32 @@ class _WelcomeScreenState extends State<WelcomeScreen>
   void initState() {
     super.initState();
     _setupAnimations();
+    _checkUserState();
+  }
+
+  Future<void> _checkUserState() async {
+    try {
+      // Initialize storage service
+      await StorageService().initialize();
+      
+      // Load user profile
+      if (mounted) {
+        await context.read<UserProvider>().loadUserProfile();
+      }
+
+      if (mounted) {
+        final storageService = StorageService();
+        final isFirstLaunch = await storageService.isFirstLaunch();
+        final userProvider = context.read<UserProvider>();
+
+        // If not first launch and user has profile, redirect to home
+        if (!isFirstLaunch && userProvider.hasProfile) {
+          context.go('/home');
+        }
+      }
+    } catch (e) {
+      // On error, stay on welcome screen (which is the current screen)
+    }
   }
 
   void _setupAnimations() {
@@ -101,6 +130,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               'Welcome to Affirm!',
                               style: AppTheme.headingLarge.copyWith(
                                 fontSize: 32,
+                                height: 1.2,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -132,7 +162,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               child: Container(
                                 decoration: AppTheme.buttonGradientDecoration,
                                 child: ElevatedButton(
-                                  onPressed: () => context.go('/age-selection'),
+                                  onPressed: () => context.push('/age-selection'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.transparent,
                                     shadowColor: Colors.transparent,
