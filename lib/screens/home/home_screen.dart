@@ -5,8 +5,8 @@ import '../../providers/affirmation_provider.dart';
 import '../../services/storage_service.dart';
 import '../../utils/app_theme.dart';
 import '../../widgets/affirmation_card.dart';
-import '../../widgets/daily_streak_widget.dart';
-import '../../widgets/focus_areas_chips.dart';
+// Removed DailyStreakWidget from Home to simplify top bar
+// Removed FocusAreasChips from Home to simplify UI
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -146,11 +146,6 @@ class _HomeScreenState extends State<HomeScreen>
                                 ),
                                 
                                 const Spacer(),
-                                
-                                // Daily streak
-                                DailyStreakWidget(
-                                  streak: affirmationProvider.dailyStreak,
-                                ),
                               ],
                             ),
                           ),
@@ -161,13 +156,7 @@ class _HomeScreenState extends State<HomeScreen>
                           padding: const EdgeInsets.all(AppTheme.spacingL),
                           sliver: SliverList(
                             delegate: SliverChildListDelegate([
-                              // Focus areas
-                              FocusAreasChips(
-                                focusAreas: userProvider.displayFocusAreas,
-                              ),
-                              
-                              const SizedBox(height: AppTheme.spacingXL),
-                              
+                              // Affirmation panel
                               // Main affirmation card
                               if (affirmationProvider.currentAffirmation != null)
                                 AffirmationCard(
@@ -184,31 +173,6 @@ class _HomeScreenState extends State<HomeScreen>
                                 )
                               else
                                 _buildEmptyState(),
-                              
-                              const SizedBox(height: AppTheme.spacingXL),
-                              
-                              // Navigation buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: OutlinedButton.icon(
-                                      onPressed: () => _showPreviousAffirmation(),
-                                      icon: const Icon(Icons.arrow_back_ios),
-                                      label: const Text('Previous'),
-                                    ),
-                                  ),
-                                  
-                                  const SizedBox(width: AppTheme.spacingM),
-                                  
-                                  Expanded(
-                                    flex: 2,
-                                    child: ElevatedButton(
-                                      onPressed: () => affirmationProvider.getNextAffirmation(),
-                                      child: const Text('Next Affirmation'),
-                                    ),
-                                  ),
-                                ],
-                              ),
                               
                               const SizedBox(height: AppTheme.spacingXL),
                               
