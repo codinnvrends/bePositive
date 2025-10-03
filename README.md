@@ -1,4 +1,4 @@
-# BePositive! - Personalized Affirmations App
+# Affirm! - Personalized Affirmations App
 
 A Flutter-based hybrid mobile application that delivers personalized daily affirmations based on user demographics and focus areas.
 

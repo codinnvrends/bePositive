@@ -1,6 +1,6 @@
-// BePositive app widget tests
+// Affirm! app widget tests
 //
-// Tests for the BePositive affirmations app functionality
+// Tests for the Affirm! affirmations app functionality
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,7 +12,7 @@ import 'package:be_positive/providers/affirmation_provider.dart';
 import 'package:be_positive/providers/notification_provider.dart';
 
 void main() {
-  group('BePositive App Tests', () {
+  group('Affirm! App Tests', () {
     testWidgets('App loads successfully', (WidgetTester tester) async {
       // Create a test-friendly version of the app
       await tester.pumpWidget(
