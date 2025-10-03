@@ -1,4 +1,4 @@
-package com.example.be_positive
+package com.sapps.be_positive
 
 import android.content.BroadcastReceiver
 import android.content.Context

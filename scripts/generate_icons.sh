@@ -43,6 +43,16 @@ flutter pub get
 echo "🔧 Generating app launcher icons..."
 flutter pub run flutter_launcher_icons:main
 
+# Ensure adaptive icon foreground is properly set up
+echo "🔧 Setting up adaptive icons..."
+cp -f assets/icons/app_icon.png android/app/src/main/res/drawable/ic_launcher_foreground.png
+
+# Fix the inset percentage in adaptive icon XML files
+echo "🔧 Fixing adaptive icon inset percentage..."
+sed -i 's/android:inset="16%"/android:inset="5%"/g' android/app/src/main/res/mipmap-anydpi-v26/launcher_icon.xml
+sed -i 's/android:inset="16%"/android:inset="5%"/g' android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+sed -i 's/android:inset="16%"/android:inset="5%"/g' android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
 # Generate splash screens
 echo "🌟 Generating native splash screens..."
 flutter pub run flutter_native_splash:create

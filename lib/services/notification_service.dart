@@ -216,6 +216,7 @@ class NotificationService {
         if (day == 0 && start.isBefore(now)) continue;
         final ymd = start.year * 10000 + start.month * 100 + start.day;
         final id = 710000 + (ymd % 100000) * 1 + 0;
+        final scheduleMode = await _getScheduleMode();
         await _flutterLocalNotificationsPlugin.zonedSchedule(
           id,
           'Affirmation',
@@ -232,7 +233,7 @@ class NotificationService {
             ),
             iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
           ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
           payload: affirmationId,
         );
@@ -256,6 +257,7 @@ class NotificationService {
         if (dt.day != start.day) continue;
         final ymd = dt.year * 10000 + dt.month * 100 + dt.day;
         final id = 720000 + (ymd % 100000) * 200 + i; // spread ids
+        final scheduleMode = await _getScheduleMode();
         await _flutterLocalNotificationsPlugin.zonedSchedule(
           id,
           'Affirmation',
@@ -272,7 +274,7 @@ class NotificationService {
             ),
             iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
           ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
           payload: affirmationId,
         );
@@ -643,9 +645,37 @@ class NotificationService {
   }
 
   Future<bool> areExactAlarmsAllowed() async {
-    // Removed as it's not supported by the current plugin version
-    return true;
+    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+        _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+    
+    if (androidImplementation == null) return true;
+    
+    try {
+      // Try to check if exact alarms are allowed (Android 12+)
+      final bool? canScheduleExactAlarms = await androidImplementation.canScheduleExactNotifications();
+      return canScheduleExactAlarms ?? true;
+    } catch (e) {
+      if (kDebugMode) {
+        print('Could not check exact alarm permission: $e');
+      }
+      return true; // Assume allowed for older versions
+    }
   }
+
+  Future<AndroidScheduleMode> _getScheduleMode() async {
+    final canScheduleExact = await areExactAlarmsAllowed();
+    if (canScheduleExact) {
+      return AndroidScheduleMode.exactAllowWhileIdle;
+    } else {
+      if (kDebugMode) {
+        print('Exact alarms not permitted, using inexact scheduling');
+        print('Note: Notifications may be delayed by the system to optimize battery usage');
+      }
+      return AndroidScheduleMode.inexact;
+    }
+  }
+
 
   Future<void> scheduleAffirmationNotifications(NotificationSettings settings) async {
     if (!settings.enabled) {
@@ -713,6 +743,7 @@ class NotificationService {
           scheduledDate: dt,
         );
         // overwrite payload via a direct zonedSchedule call with payload separate
+        final scheduleMode = await _getScheduleMode();
         await _flutterLocalNotificationsPlugin.zonedSchedule(
           day * 100 + 0,
           'Daily Affirmation 🌟',
@@ -729,7 +760,7 @@ class NotificationService {
             ),
             iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
           ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
           payload: aff.id,
         );
@@ -755,6 +786,7 @@ class NotificationService {
 
         final aff = safeAffirmations[(day * 97 + i) % safeAffirmations.length];
         final id = day * 200 + i;
+        final scheduleMode = await _getScheduleMode();
         await _flutterLocalNotificationsPlugin.zonedSchedule(
           id,
           'Daily Affirmation 🌟',
@@ -771,7 +803,7 @@ class NotificationService {
             ),
             iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
           ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+          androidScheduleMode: scheduleMode,
           uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
           payload: aff.id,
         );
@@ -808,6 +840,7 @@ class NotificationService {
     );
 
     final tz.TZDateTime tzDateTime = tz.TZDateTime.from(scheduledDate, tz.local);
+    final scheduleMode = await _getScheduleMode();
 
     await _flutterLocalNotificationsPlugin.zonedSchedule(
       id,
@@ -815,7 +848,7 @@ class NotificationService {
       body,
       tzDateTime,
       platformChannelSpecifics,
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: scheduleMode,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: 'affirmation_notification',
@@ -1308,6 +1341,7 @@ class NotificationService {
       );
 
       final tz.TZDateTime tzDateTime = tz.TZDateTime.from(scheduledDate, tz.local);
+      final scheduleMode = await _getScheduleMode();
 
       await _flutterLocalNotificationsPlugin.zonedSchedule(
         id,
@@ -1315,7 +1349,7 @@ class NotificationService {
         content, // Show full content, no truncation
         tzDateTime,
         platformChannelSpecifics,
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: scheduleMode,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         payload: affirmationId,
@@ -1368,6 +1402,7 @@ class NotificationService {
       final ymd = date.year * 10000 + date.month * 100 + date.day;
       final id = 700000 + (ymd % 100000) * 1 + 0; // one per day
 
+      final scheduleMode = await _getScheduleMode();
       await _flutterLocalNotificationsPlugin.zonedSchedule(
         id,
         'Affirmation',
@@ -1384,7 +1419,7 @@ class NotificationService {
           ),
           iOS: DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: scheduleMode,
         uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
         payload: affirmationId,
       );

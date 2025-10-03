@@ -1,4 +1,4 @@
-package com.example.be_positive
+package com.sapps.be_positive
 
 import io.flutter.embedding.android.FlutterActivity
 
