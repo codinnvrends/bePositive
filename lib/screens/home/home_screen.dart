@@ -27,8 +27,12 @@ class _HomeScreenState extends State<HomeScreen>
   void initState() {
     super.initState();
     _setupAnimations();
-    _initializeDataWithTimeout();
-    _checkNotificationPermissions();
+    // Defer provider initialization and permission checks until after the first frame
+    // to avoid calling notifyListeners/setState during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeDataWithTimeout();
+      _checkNotificationPermissions();
+    });
   }
 
   Future<void> _initializeDataWithTimeout() async {
